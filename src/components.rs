@@ -1,11 +1,15 @@
-use nalgebra_glm::vec3;
+use glm::{Vec2, vec2};
+use glm::{Vec3, vec3};
+use glm::{Mat3x4, mat3x4};
+use glm::normalize;
+use crate::utils::{transform_point, transform_direction};
 
 const INVALID: i32 = -1;
 const RAY_EPS: f32 = 1e-4;
 
 pub struct Ray {
-    origin: glm::Vec3,
-    direction: glm::Vec3,
+    origin: Vec3,
+    direction: Vec3,
     tmin: f32,
     tmax: f32
 }
@@ -13,8 +17,8 @@ pub struct Ray {
 impl Default for Ray {
     fn default() -> Self {
         Ray {
-            origin: glm::vec3(0.0, 0.0, 0.0),
-            direction: glm::vec3(0.0, 0.0, 1.0),
+            origin: vec3(0.0, 0.0, 0.0),
+            direction: vec3(0.0, 0.0, 1.0),
             tmin: RAY_EPS,
             tmax: f32::MAX
         }
@@ -22,7 +26,7 @@ impl Default for Ray {
 }
 
 pub struct Camera {
-    pub frame: glm::Mat3x4,
+    pub frame: Mat3x4,
     pub orthographic: bool,
     pub lens: f32,
     pub film: f32,
@@ -34,13 +38,57 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         Camera {
-            frame: glm::mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            frame: mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
             orthographic: false,
             lens: 0.050,
             film: 0.036,
             aspect: 1.5,
             focus: 10000.0,
             aperture: 0.0
+        }
+    }
+}
+
+impl Camera {
+    pub fn eval(&self, image_uv: Vec2, lens_uv: Vec2) -> Ray {
+        let film = if self.aspect >= 1.0 {
+            vec2(self.film, self.film / self.aspect)
+        } else {
+            vec2(self.film * self.aspect, self.film)
+        };
+        if !self.orthographic {
+            let q = vec3(film.x * (0.5 - image_uv.x), film.y * (image_uv.y - 0.5), self.lens);
+            // ray direction through the lens center
+            let dc = -normalize(&q);
+            // point on the lens
+            let e = vec3(
+                lens_uv.x * self.aperture / 2.0, lens_uv.y * self.aperture / 2.0, 0.0);
+            // point on the focus plane
+            let p = dc * self.focus / dc.z.abs();
+            // correct ray direction to account for camera focusing
+            let d = normalize(&(p - e));
+            Ray {
+                origin: transform_point(&self.frame, &e),
+                direction: transform_direction(&self.frame, &d),
+                ..Default::default()
+            }
+        } else {
+            let scale = 1.0 / self.lens;
+            let q = vec3(film.x * (0.5 - image_uv.x) * scale, film.y * (image_uv.y - 0.5) * scale, self.lens);
+            let d = vec3(-q.x, -q.y, 0.0) + vec3(lens_uv.x * self.aperture / 2.0,
+                lens_uv.y * self.aperture / 2.0, 0.0);
+            // point on the lens
+            let e = vec3(
+                lens_uv.x * self.aperture / 2.0, lens_uv.y * self.aperture / 2.0, 0.0);
+            // point on the focus plane
+            let p = vec3(-q.x, -q.y, -self.focus);
+            // correct ray direction to account for camera focusing
+            let d = normalize(&(p - e));
+            Ray {
+                origin: transform_point(&self.frame, &e),
+                direction: transform_direction(&self.frame, &d),
+                ..Default::default()
+            }
         }
     }
 }
@@ -55,12 +103,12 @@ enum MaterialType {
 
 pub struct Material {
     material: MaterialType,
-    emission: glm::Vec3,
-    color: glm::Vec3,
+    emission: Vec3,
+    color: Vec3,
     roughness: f32,
     metallic: f32,
     ior: f32,
-    scattering: glm::Vec3,
+    scattering: Vec3,
     scanisotropy: f32,
     trdepth: f32,
     opacity: f32,
@@ -76,12 +124,12 @@ impl Default for Material {
     fn default() -> Self {
         Material {
             material: MaterialType::Matte,
-            emission: glm::vec3(0.0, 0.0, 0.0),
-            color: glm::vec3(0.0, 0.0, 0.0),
+            emission: vec3(0.0, 0.0, 0.0),
+            color: vec3(0.0, 0.0, 0.0),
             roughness: 0.0,
             metallic: 0.0,
             ior: 1.5,
-            scattering: glm::vec3(0.0, 0.0, 0.0),
+            scattering: vec3(0.0, 0.0, 0.0),
             scanisotropy: 0.0,
             trdepth: 0.01,
             opacity: 1.0,
@@ -105,7 +153,7 @@ pub struct Texture {
 }
 
 pub struct Instance {
-    frame: glm::Mat3x4,
+    frame: Mat3x4,
     shape: i32,
     material: i32
 }
@@ -113,7 +161,7 @@ pub struct Instance {
 impl Default for Instance {
     fn default() -> Self {
         Instance {
-            frame: glm::mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            frame: mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
             shape: INVALID,
             material: INVALID
         }
@@ -121,16 +169,16 @@ impl Default for Instance {
 }
 
 pub struct Environment {
-    frame: glm::Mat3x4,
-    emission: glm::Vec3,
+    frame: Mat3x4,
+    emission: Vec3,
     emission_tex: i32
 }
 
 impl Default for Environment {
     fn default() -> Self {
         Environment {
-            frame: glm::mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
-            emission: glm::vec3(0.0, 0.0, 0.0),
+            frame: mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0),
+            emission: vec3(0.0, 0.0, 0.0),
             emission_tex: INVALID
         }
     }
@@ -144,8 +192,8 @@ pub struct Shape {
     triangles: Vec<glm::IVec3>,
     quads: Vec<glm::IVec4>,
     // vertex data
-    positions: Vec<glm::Vec3>,
-    normals: Vec<glm::Vec3>,
+    positions: Vec<Vec3>,
+    normals: Vec<Vec3>,
     texcoords: Vec<glm::Vec2>,
     colors: Vec<glm::Vec4>,
     radius: Vec<f32>,
@@ -170,7 +218,7 @@ impl Scene {
         let mut instances = Vec::new();
 
         let camera = Camera {
-            frame: glm::mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 3.9),
+            frame: mat3x4(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0, 3.9),
             orthographic: false,
             lens: 0.035,
             film: 0.024,

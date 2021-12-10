@@ -1,6 +1,6 @@
 use rand::{SeedableRng, Rng};
 use rand::rngs::SmallRng;
-use nalgebra_glm::{Vec2, vec2};
+use nalgebra_glm::{Vec2, vec2, Mat3x4, Vec3, normalize};
 use crate::components;
 
 pub struct RaytraceParams {
@@ -71,4 +71,12 @@ impl RaytraceState {
 pub fn rand2(rng: &mut SmallRng) -> Vec2 {
     let (rng_x, rng_y) = rng.gen::<(f32, f32)>();
     vec2(rng_x, rng_y)
+}
+
+pub fn transform_point(a: &Mat3x4, b: &Vec3) -> Vec3 {
+    a.column(0) * b.x + a.column(1) * b.y + a.column(2) * b.z + a.column(3)
+}
+
+pub fn transform_direction(a: &Mat3x4, b: &Vec3) -> Vec3 {
+    normalize(&(a.column(0) * b.x + a.column(1) * b.y + a.column(2) * b.z))
 }
