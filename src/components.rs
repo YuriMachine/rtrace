@@ -3,7 +3,7 @@ use nalgebra_glm::vec3;
 const INVALID: i32 = -1;
 const RAY_EPS: f32 = 1e-4;
 
-struct Ray {
+pub struct Ray {
     origin: glm::Vec3,
     direction: glm::Vec3,
     tmin: f32,

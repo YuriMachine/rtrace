@@ -1,18 +1,18 @@
-use rand::SeedableRng;
+use rand::{SeedableRng, Rng};
 use rand::rngs::SmallRng;
-
+use nalgebra_glm::{Vec2, vec2};
 use crate::components;
 
-struct RaytraceParams {
-    camera: usize,
-    resolution: usize,
+pub struct RaytraceParams {
+    pub camera: usize,
+    pub resolution: usize,
     //raytrace_shader_type shader     = raytrace_shader_type::raytrace;
-    samples: i32,
-    bounces: i32,
-    noparallel: bool,
-    pratio: i32,
-    exposure: f32,
-    filmic: bool
+    pub samples: i32,
+    pub bounces: i32,
+    pub noparallel: bool,
+    pub pratio: i32,
+    pub exposure: f32,
+    pub filmic: bool
 }
 
 impl Default for RaytraceParams {
@@ -32,13 +32,13 @@ impl Default for RaytraceParams {
 }
 
 #[derive(Default)]
-struct RaytraceState {
-    width: usize,
-    height: usize,
-    samples: i32,
-    image: Vec<glm::Vec4>,
-    hits: Vec<i32>,
-    rngs: Vec<SmallRng>
+pub struct RaytraceState {
+    pub width: usize,
+    pub height: usize,
+    pub samples: i32,
+    pub image: Vec<glm::Vec4>,
+    pub hits: Vec<i32>,
+    pub rngs: Vec<SmallRng>
 }
 
 impl RaytraceState {
@@ -68,3 +68,7 @@ impl RaytraceState {
     }
 }
 
+pub fn rand2(rng: &mut SmallRng) -> Vec2 {
+    let (rng_x, rng_y) = rng.gen::<(f32, f32)>();
+    vec2(rng_x, rng_y)
+}

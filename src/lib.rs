@@ -5,7 +5,8 @@ extern crate rand;
 #[allow(dead_code)]
 mod components;
 #[allow(dead_code)]
-mod trace_utils;
+mod utils;
+#[allow(dead_code)]
 mod trace;
 
 #[cfg(test)]
