@@ -1,11 +1,11 @@
-use crate::utils::{transform_direction, transform_point};
-use glm::normalize;
-use glm::{mat3x4, Mat3x4};
-use glm::{vec2, Vec2};
-use glm::{vec3, Vec3};
-
+use crate::bvh::BvhIntersection;
+use crate::utils::*;
+use glm::{clamp, dot, log, mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
+use glm::{BVec4, Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
+use std::f32::consts::PI;
 const INVALID: usize = usize::MAX;
 const RAY_EPS: f32 = 1e-4;
+const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
 
 #[derive(Debug)]
 pub struct Ray {
@@ -18,7 +18,7 @@ pub struct Ray {
 impl Default for Ray {
     fn default() -> Self {
         Ray {
-            origin: vec3(0.0, 0.0, 0.0),
+            origin: Vec3::zeros(),
             direction: vec3(0.0, 0.0, 1.0),
             tmin: RAY_EPS,
             tmax: f32::MAX,
@@ -78,7 +78,7 @@ impl Camera {
             let d = normalize(&(p - e));
             Ray {
                 origin: transform_point(&self.frame, &e),
-                direction: transform_direction(&self.frame, &d),
+                direction: transform_direction_frame(&self.frame, &d),
                 ..Default::default()
             }
         } else {
@@ -100,23 +100,27 @@ impl Camera {
             let d = normalize(&(p - e));
             Ray {
                 origin: transform_point(&self.frame, &e),
-                direction: transform_direction(&self.frame, &d),
+                direction: transform_direction_frame(&self.frame, &d),
                 ..Default::default()
             }
         }
     }
 }
 
+#[derive(PartialEq, Copy, Clone)]
 pub enum MaterialType {
     Matte,
     Glossy,
     Reflective,
     Transparent,
     Refractive,
+    Volumetric,
+    Subsurface,
+    Gltfpbr,
 }
 
 pub struct Material {
-    pub material: MaterialType,
+    pub m_type: MaterialType,
     pub emission: Vec3,
     pub color: Vec3,
     pub roughness: f32,
@@ -137,13 +141,13 @@ pub struct Material {
 impl Default for Material {
     fn default() -> Self {
         Material {
-            material: MaterialType::Matte,
-            emission: vec3(0.0, 0.0, 0.0),
-            color: vec3(0.0, 0.0, 0.0),
+            m_type: MaterialType::Matte,
+            emission: Vec3::zeros(),
+            color: Vec3::zeros(),
             roughness: 0.0,
             metallic: 0.0,
             ior: 1.5,
-            scattering: vec3(0.0, 0.0, 0.0),
+            scattering: Vec3::zeros(),
             scanisotropy: 0.0,
             trdepth: 0.01,
             opacity: 1.0,
@@ -157,13 +161,127 @@ impl Default for Material {
     }
 }
 
+pub struct MaterialPoint {
+    pub m_type: MaterialType,
+    pub emission: Vec3,
+    pub color: Vec3,
+    pub roughness: f32,
+    pub metallic: f32,
+    pub ior: f32,
+    pub density: Vec3,
+    pub scattering: Vec3,
+    pub scanisotropy: f32,
+    pub trdepth: f32,
+    pub opacity: f32,
+}
+
+impl Default for MaterialPoint {
+    fn default() -> Self {
+        MaterialPoint {
+            m_type: MaterialType::Matte,
+            emission: Vec3::zeros(),
+            color: Vec3::zeros(),
+            roughness: 0.0,
+            metallic: 0.0,
+            ior: 1.0,
+            density: Vec3::zeros(),
+            scattering: Vec3::zeros(),
+            scanisotropy: 0.0,
+            trdepth: 0.01,
+            opacity: 1.0,
+        }
+    }
+}
+
+impl MaterialPoint {
+    pub fn eval_emission(&self, normal: &Vec3, outgoing: &Vec3) -> Vec3 {
+        if dot(normal, outgoing) >= 0.0 {
+            self.emission
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    pub fn sample_bsdfcos(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32, rn: &Vec2) -> Vec3 {
+        match self.m_type {
+            MaterialType::Matte => self.sample_matte(normal, outgoing, rn),
+            _ => Vec3::zeros(),
+        }
+    }
+
+    pub fn eval_bsdfcos(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        if self.roughness == 0.0 {
+            return Vec3::zeros();
+        }
+        match self.m_type {
+            MaterialType::Matte => self.eval_matte(normal, outgoing, incoming),
+            _ => Vec3::zeros(),
+        }
+    }
+
+    pub fn sample_bsdfcos_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        if self.roughness == 0.0 {
+            return 0.0;
+        }
+        match self.m_type {
+            MaterialType::Matte => self.sample_matte_pdf(normal, outgoing, incoming),
+            _ => 0.0,
+        }
+    }
+
+    fn sample_matte(&self, normal: &Vec3, outgoing: &Vec3, rn: &Vec2) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        MaterialPoint::sample_hemisphere_cos(&up_normal, rn)
+    }
+
+    fn eval_matte(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+            return Vec3::zeros();
+        }
+        self.color / PI * dot(normal, incoming).abs()
+    }
+
+    fn sample_matte_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+            return 0.0;
+        }
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        MaterialPoint::sample_hemisphere_cos_pdf(&up_normal, incoming)
+    }
+
+    pub fn sample_hemisphere_cos(normal: &Vec3, rn: &Vec2) -> Vec3 {
+        let z = f32::sqrt(rn.y);
+        let r = f32::sqrt(1.0 - z * z);
+        let phi = 2.0 * PI * rn.x;
+        let local_direction = vec3(r * f32::cos(phi), r * f32::sin(phi), z);
+        transform_direction_mat(&basis_fromz(normal), &local_direction)
+    }
+
+    fn sample_hemisphere_cos_pdf(normal: &Vec3, incoming: &Vec3) -> f32 {
+        let cosw = dot(normal, incoming);
+        if cosw <= 0.0 {
+            0.0
+        } else {
+            cosw / PI
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Texture {
     pub width: i32,
     pub height: i32,
     pub linear: bool,
-    pub pixelsf: Vec<glm::Vec4>,
-    pub pixelsb: Vec<glm::BVec4>,
+    pub pixelsf: Vec<Vec4>,
+    pub pixelsb: Vec<BVec4>,
 }
 
 pub struct Instance {
@@ -192,7 +310,7 @@ impl Default for Environment {
     fn default() -> Self {
         Environment {
             frame: mat3x4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
-            emission: vec3(0.0, 0.0, 0.0),
+            emission: Vec3::zeros(),
             emission_tex: INVALID,
         }
     }
@@ -201,17 +319,94 @@ impl Default for Environment {
 #[derive(Default)]
 pub struct Shape {
     // element data
+    // this should be usize but you need to handle embree
     pub points: Vec<i32>,
-    pub lines: Vec<glm::IVec2>,
-    pub triangles: Vec<glm::IVec3>,
-    pub quads: Vec<glm::IVec4>,
+    pub lines: Vec<TVec2<i32>>,
+    pub triangles: Vec<TVec3<i32>>,
+    pub quads: Vec<TVec4<i32>>,
     // vertex data
     pub positions: Vec<Vec3>,
     pub normals: Vec<Vec3>,
-    pub texcoords: Vec<glm::Vec2>,
-    pub colors: Vec<glm::Vec4>,
+    pub texcoords: Vec<Vec2>,
+    pub colors: Vec<Vec4>,
     pub radius: Vec<f32>,
-    pub tangents: Vec<glm::Vec4>,
+    pub tangents: Vec<Vec4>,
+}
+
+impl Shape {
+    fn eval_position(&self, intersection: &BvhIntersection) -> Vec3 {
+        let element = intersection.element;
+        if !self.triangles.is_empty() {
+            let triangle = &self.triangles[element];
+            interpolate_triangle(
+                &self.positions[triangle.x as usize],
+                &self.positions[triangle.y as usize],
+                &self.positions[triangle.z as usize],
+                &intersection.uv,
+            )
+        } else if !self.quads.is_empty() {
+            let quad = &self.quads[element];
+            interpolate_quad(
+                &self.positions[quad.x as usize],
+                &self.positions[quad.y as usize],
+                &self.positions[quad.z as usize],
+                &self.positions[quad.w as usize],
+                &intersection.uv,
+            )
+        } else if !self.lines.is_empty() {
+            let line = &self.lines[element];
+            interpolate_line(
+                &self.positions[line.x as usize],
+                &self.positions[line.y as usize],
+                intersection.uv.x,
+            )
+        } else if !self.points.is_empty() {
+            let point = self.points[element];
+            self.positions[point as usize]
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    fn eval_normal(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+        let element = intersection.element;
+        if !self.triangles.is_empty() {
+            let triangle = self.triangles[element];
+            transform_normal_frame(
+                &instance.frame,
+                &triangle_normal(
+                    &self.positions[triangle.x as usize],
+                    &self.positions[triangle.y as usize],
+                    &self.positions[triangle.z as usize],
+                ),
+                false,
+            )
+        } else if !self.quads.is_empty() {
+            let quad = self.quads[element];
+            let quad_normal = (triangle_normal(
+                &self.positions[quad.x as usize],
+                &self.positions[quad.y as usize],
+                &self.positions[quad.w as usize],
+            ) + triangle_normal(
+                &self.positions[quad.z as usize],
+                &self.positions[quad.w as usize],
+                &self.positions[quad.y as usize],
+            ))
+            .normalize();
+            transform_normal_frame(&instance.frame, &quad_normal, false)
+        } else if !self.lines.is_empty() {
+            let line = self.lines[element];
+            transform_normal_frame(
+                &instance.frame,
+                &(self.positions[line.y as usize] - (self.positions[line.x as usize]).normalize()),
+                false,
+            )
+        } else if self.points.is_empty() {
+            vec3(0.0, 0.0, 1.0)
+        } else {
+            Vec3::zeros()
+        }
+    }
 }
 
 #[derive(Default)]
@@ -225,6 +420,272 @@ pub struct Scene {
 }
 
 impl Scene {
+    pub fn eval_shading_position(&self, intersection: &BvhIntersection) -> Vec3 {
+        let instance = &self.instances[intersection.instance];
+        let shape = &self.shapes[instance.shape];
+        if !shape.triangles.is_empty() || !shape.quads.is_empty() {
+            self.eval_position(instance, intersection)
+        } else if !shape.lines.is_empty() {
+            self.eval_position(instance, intersection)
+        } else if !shape.points.is_empty() {
+            shape.eval_position(intersection)
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    fn eval_position(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+        let shape = &self.shapes[instance.shape];
+        let element = intersection.element;
+        if !shape.triangles.is_empty() {
+            let triangle = &shape.triangles[element];
+            transform_point(
+                &instance.frame,
+                &interpolate_triangle(
+                    &shape.positions[triangle.x as usize],
+                    &shape.positions[triangle.y as usize],
+                    &shape.positions[triangle.z as usize],
+                    &intersection.uv,
+                ),
+            )
+        } else if !shape.quads.is_empty() {
+            let quad = &shape.quads[element];
+            transform_point(
+                &instance.frame,
+                &interpolate_quad(
+                    &shape.positions[quad.x as usize],
+                    &shape.positions[quad.y as usize],
+                    &shape.positions[quad.z as usize],
+                    &shape.positions[quad.w as usize],
+                    &intersection.uv,
+                ),
+            )
+        } else if !shape.lines.is_empty() {
+            let line = &shape.lines[element];
+            transform_point(
+                &instance.frame,
+                &interpolate_line(
+                    &shape.positions[line.x as usize],
+                    &shape.positions[line.y as usize],
+                    intersection.uv.x,
+                ),
+            )
+        } else if !shape.points.is_empty() {
+            let point = shape.points[element];
+            transform_point(&instance.frame, &shape.positions[point as usize])
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    pub fn eval_shading_normal(&self, intersection: &BvhIntersection, outgoing: &Vec3) -> Vec3 {
+        let instance = &self.instances[intersection.instance];
+        let shape = &self.shapes[instance.shape];
+        let material = &self.materials[instance.material];
+        let uv = intersection.uv;
+        if !shape.triangles.is_empty() || !shape.quads.is_empty() {
+            let normal = if material.normal_tex == INVALID {
+                self.eval_normal(instance, intersection)
+            } else {
+                self.eval_normalmap(instance, intersection)
+            };
+            if dot(&normal, outgoing) >= 0.0 || material.m_type == MaterialType::Refractive {
+                normal
+            } else {
+                -normal
+            }
+        } else if !shape.lines.is_empty() {
+            let normal = self.eval_normal(instance, intersection);
+            orthonormalize(outgoing, &normal)
+        } else if !shape.points.is_empty() {
+            // HACK: sphere
+            if true {
+                transform_direction_frame(
+                    &instance.frame,
+                    &vec3(
+                        f32::cos(2.0 * PI * uv.x) * f32::sin(PI * uv.y),
+                        f32::sin(2.0 * PI * uv.x) * f32::sin(PI * uv.y),
+                        f32::cos(PI * uv.y),
+                    ),
+                )
+            } else {
+                outgoing.clone()
+            }
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    fn eval_normal(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+        let shape = &self.shapes[instance.shape];
+        let element = intersection.element;
+        if shape.normals.is_empty() {
+            return shape.eval_normal(instance, intersection);
+        }
+        if !shape.triangles.is_empty() {
+            let triangle = shape.triangles[element];
+            transform_normal_frame(
+                &instance.frame,
+                &interpolate_triangle(
+                    &shape.normals[triangle.x as usize],
+                    &shape.normals[triangle.y as usize],
+                    &shape.normals[triangle.z as usize],
+                    &intersection.uv,
+                )
+                .normalize(),
+                false,
+            )
+        } else if !shape.quads.is_empty() {
+            let quad = shape.quads[element];
+            transform_normal_frame(
+                &instance.frame,
+                &interpolate_quad(
+                    &shape.normals[quad.x as usize],
+                    &shape.normals[quad.y as usize],
+                    &shape.normals[quad.z as usize],
+                    &shape.normals[quad.w as usize],
+                    &intersection.uv,
+                )
+                .normalize(),
+                false,
+            )
+        } else if !shape.lines.is_empty() {
+            let line = shape.lines[element];
+            transform_normal_frame(
+                &instance.frame,
+                &interpolate_line(
+                    &shape.normals[line.x as usize],
+                    &shape.normals[line.y as usize],
+                    intersection.uv.x,
+                )
+                .normalize(),
+                false,
+            )
+        } else if !shape.points.is_empty() {
+            transform_normal_frame(
+                &instance.frame,
+                &shape.normals[shape.points[element as usize] as usize].normalize(),
+                false,
+            )
+        } else {
+            Vec3::zeros()
+        }
+    }
+
+    fn eval_normalmap(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+        Vec3::zeros()
+    }
+
+    fn eval_color(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec4 {
+        let shape = &self.shapes[instance.shape];
+        let element = intersection.element;
+        if shape.colors.is_empty() {
+            return vec4(1.0, 1.0, 1.0, 1.0);
+        }
+        if !shape.triangles.is_empty() {
+            let t = shape.triangles[element];
+            interpolate_triangle(
+                &shape.colors[t.x as usize],
+                &shape.colors[t.y as usize],
+                &shape.colors[t.z as usize],
+                &intersection.uv,
+            )
+        } else if !shape.quads.is_empty() {
+            let q = shape.quads[element];
+            interpolate_quad(
+                &shape.colors[q.x as usize],
+                &shape.colors[q.y as usize],
+                &shape.colors[q.z as usize],
+                &shape.colors[q.w as usize],
+                &intersection.uv,
+            )
+        } else if !shape.lines.is_empty() {
+            let l = shape.lines[element];
+            interpolate_line(
+                &shape.colors[l.x as usize],
+                &shape.colors[l.y as usize],
+                intersection.uv.x,
+            )
+        } else if !shape.points.is_empty() {
+            shape.colors[shape.points[element as usize] as usize]
+        } else {
+            Vec4::zeros()
+        }
+    }
+
+    pub fn eval_material(&self, intersection: &BvhIntersection) -> MaterialPoint {
+        let instance = &self.instances[intersection.instance];
+        let material = &self.materials[instance.material];
+        //let texcoord = self.eval_texcoord(instance, intersection);
+
+        // evaluate textures
+        /*
+        let emission_tex = eval_texture(
+            scene, material.emission_tex, texcoord, true);
+        let color_tex     = eval_texture(scene, material.color_tex, texcoord, true);
+        let roughness_tex = eval_texture(
+            scene, material.roughness_tex, texcoord, false);
+        let scattering_tex = eval_texture(
+            scene, material.scattering_tex, texcoord, true);
+        */
+        let color_shp = self.eval_color(instance, intersection);
+
+        // material point
+        let m_type = material.m_type;
+        let emission = material.emission; // * xyz(emission_tex);
+        let color = material.color.component_mul(&color_shp.xyz()); // * xyz(color_tex);
+        let opacity = material.opacity; // * color_tex.w * color_shp.w;
+        let metallic = material.metallic; // * roughness_tex.z;
+        let mut roughness = material.roughness; // * roughness_tex.y;
+        roughness *= roughness;
+        let ior = material.ior;
+        let scattering = material.scattering; //* xyz(scattering_tex);
+        let scanisotropy = material.scanisotropy;
+        let trdepth = material.trdepth;
+
+        // volume density
+        let density = if m_type == MaterialType::Refractive
+            || m_type == MaterialType::Volumetric
+            || m_type == MaterialType::Subsurface
+        {
+            -log(&clamp(&color, 0.0001, 1.0)) / trdepth
+        } else {
+            Vec3::zeros()
+        };
+
+        // fix roughness
+        if m_type == MaterialType::Matte
+            || m_type == MaterialType::Gltfpbr
+            || m_type == MaterialType::Glossy
+        {
+            roughness = roughness.clamp(MIN_ROUGHNESS, 1.0);
+        } else if m_type == MaterialType::Volumetric {
+            roughness = 0.0;
+        } else {
+            if roughness < MIN_ROUGHNESS {
+                roughness = 0.0;
+            }
+        }
+
+        MaterialPoint {
+            m_type,
+            emission,
+            color,
+            roughness,
+            metallic,
+            ior,
+            density,
+            scattering,
+            scanisotropy,
+            trdepth,
+            opacity,
+        }
+    }
+
+    fn eval_texcoord(&self, instance: &Instance, intersection: &BvhIntersection) {
+        todo!()
+    }
+
     pub fn make_cornellbox() -> Scene {
         let mut cameras = Vec::new();
         let mut shapes = Vec::new();

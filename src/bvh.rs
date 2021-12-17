@@ -50,9 +50,10 @@ impl BvhData<'_> {
                 }
             }
             if !shape.lines.is_empty() {
+                /*/
                 let mut elines: Vec<u32> = Vec::new();
                 let mut epositions: Vec<Vec4> = Vec::new();
-                let mut last_index = -1;
+                let mut last_index = usize::MAX;
                 for l in &shape.lines {
                     if last_index == l.x {
                         elines.push(epositions.len() as u32 - 1);
@@ -70,6 +71,7 @@ impl BvhData<'_> {
                     }
                     last_index = l.y;
                 }
+                */
                 /*
                 let mut flat = embree::LinearCurve::flat(&device, 0, 1, false);
                 let mut verts = flat.vertex_buffer.map();
@@ -85,6 +87,7 @@ impl BvhData<'_> {
                     use embree::*;
                     let egeometry = rtcNewGeometry(device.handle, GeometryType::TRIANGLE);
                     rtcSetGeometryVertexAttributeCount(egeometry, 1);
+
                     let embree_positions = rtcSetNewGeometryBuffer(
                         egeometry,
                         BufferType::VERTEX,
