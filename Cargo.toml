@@ -16,6 +16,7 @@ embree = "0.3.7"
 image = "0.23.14"
 rayon = "1.5.1"
 parking_lot = "0.11.2"
+serde = "1.0.131"
 
 [patch.crates-io]
 embree = { path = "../embree" }

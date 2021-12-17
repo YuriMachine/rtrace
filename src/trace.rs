@@ -1,6 +1,4 @@
-use std::f32::consts::PI;
-
-use glm::{clamp, epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
+use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
 use glm::{Vec3, Vec4};
 use parking_lot::Mutex;
 use rand::prelude::SmallRng;
@@ -9,7 +7,8 @@ use rayon::prelude::*;
 use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
 use crate::{
-    components::{Ray, Scene},
+    scene::*,
+    scene_components::Ray,
     utils::{rand2, RaytraceParams, RaytraceState},
 };
 
@@ -37,8 +36,8 @@ pub fn raytrace_samples(
             );
             let mut ray = camera.eval(uv, sample_disk(rand2(rng)));
             let mut radiance = (params.shader)(scene, bvh, &mut ray, rng, params);
-            if radiance.max() > 10.0 {
-                radiance = radiance * (10.0 / radiance.max());
+            if radiance.max() > params.clamp {
+                radiance = radiance * (params.clamp / radiance.max());
             }
             unsafe {
                 *(image_ptr as *mut Vec4).add(idx) += radiance;

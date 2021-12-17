@@ -1,7 +1,5 @@
+use crate::{scene::Scene, scene_components::Ray};
 use glm::{vec2, Vec2};
-use glm::{vec4, Vec4};
-
-use crate::components::{Ray, Scene};
 
 #[derive(Debug)]
 pub struct BvhIntersection {

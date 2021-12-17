@@ -1,6 +1,6 @@
 use std::f32::consts::PI;
 
-use crate::{bvh::BvhData, components::Ray, components::Scene, trace};
+use crate::{bvh::BvhData, scene::*, scene_components::Ray, trace};
 use glm::{inverse, make_mat3, mat3x3, normalize, transpose, vec2, vec3, vec4, Mat3};
 use glm::{Mat3x4, Vec2, Vec3, Vec4};
 use parking_lot::Mutex;
@@ -17,6 +17,7 @@ pub struct RaytraceParams {
     pub pratio: i32,
     pub exposure: f32,
     pub filmic: bool,
+    pub clamp: f32,
 }
 
 impl Default for RaytraceParams {
@@ -31,6 +32,7 @@ impl Default for RaytraceParams {
             pratio: 8,
             exposure: 0.0,
             filmic: false,
+            clamp: 10.0,
         }
     }
 }

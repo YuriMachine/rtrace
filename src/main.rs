@@ -1,6 +1,6 @@
 use image::ImageBuffer;
 use rtrace::bvh::*;
-use rtrace::components::*;
+use rtrace::scene::*;
 use rtrace::trace::*;
 use rtrace::utils::*;
 
