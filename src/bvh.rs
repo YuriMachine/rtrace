@@ -136,10 +136,10 @@ impl BvhData<'_> {
         }
 
         for instance_id in 0..scene.instances.len() {
-            let instance_frame = scene.instances[instance_id].frame;
-            let scene_bvh = &bvh_shapes[instance_id];
+            let scene_instance = &scene.instances[instance_id];
+            let scene_bvh = &bvh_shapes[scene_instance.shape];
             let mut instance = embree::Instance::unanimated(device, scene_bvh);
-            instance.set_transform3x4(&instance_frame);
+            instance.set_transform3x4(&scene_instance.frame);
             let mut geometry = embree::Geometry::Instance(instance);
             geometry.commit();
             escene.attach_geometry(geometry);
