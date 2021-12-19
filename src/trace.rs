@@ -8,9 +8,29 @@ use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
 use crate::{
     scene::*,
-    scene_components::Ray,
     utils::{rand2, RaytraceParams, RaytraceState},
 };
+
+const RAY_EPS: f32 = 1e-4;
+
+#[derive(Debug)]
+pub struct Ray {
+    pub origin: Vec3,
+    pub direction: Vec3,
+    pub tmin: f32,
+    pub tmax: f32,
+}
+
+impl Default for Ray {
+    fn default() -> Self {
+        Ray {
+            origin: Vec3::zeros(),
+            direction: vec3(0.0, 0.0, 1.0),
+            tmin: RAY_EPS,
+            tmax: f32::MAX,
+        }
+    }
+}
 
 pub fn raytrace_samples(
     state: &mut RaytraceState,
@@ -132,6 +152,9 @@ pub fn shade_raytrace(
     while bounce < params.bounces {
         let intersection = bvh.intersect(ray);
         if !intersection.hit {
+            if bounce > 0 {
+                radiance += weight.component_mul(&scene.eval_environment(ray.direction));
+            }
             break;
         }
 

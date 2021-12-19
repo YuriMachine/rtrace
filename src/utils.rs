@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
-use crate::{bvh::BvhData, scene::*, scene_components::Ray, trace};
-use glm::{inverse, make_mat3, mat3x3, normalize, transpose, vec2, vec3, vec4, Mat3};
+use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
+use glm::{inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4, Mat3};
 use glm::{Mat3x4, Vec2, Vec3, Vec4};
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
@@ -24,9 +24,9 @@ impl Default for RaytraceParams {
     fn default() -> Self {
         RaytraceParams {
             camera: 0,
-            resolution: 1280,
+            resolution: 720,
             shader: trace::shade_raytrace,
-            samples: 256,
+            samples: 64,
             bounces: 8,
             noparallel: false,
             pratio: 8,
@@ -150,6 +150,40 @@ pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
     ((a - b) * a.dot(b)).normalize()
 }
 
+pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
+    let rotation = make_mat3(
+        &[
+            frame.column(0).as_slice(),
+            frame.column(1).as_slice(),
+            frame.column(2).as_slice(),
+        ]
+        .concat(),
+    );
+    if non_rigid {
+        let minv = inverse(&rotation);
+        make_mat3x4(
+            &[
+                minv.column(0).as_slice(),
+                minv.column(1).as_slice(),
+                minv.column(2).as_slice(),
+                (-(minv * frame.column(3))).as_slice(),
+            ]
+            .concat(),
+        )
+    } else {
+        let minv = transpose(&rotation);
+        make_mat3x4(
+            &[
+                minv.column(0).as_slice(),
+                minv.column(1).as_slice(),
+                minv.column(2).as_slice(),
+                (-(minv * frame.column(3))).as_slice(),
+            ]
+            .concat(),
+        )
+    }
+}
+
 pub fn basis_fromz(normal: &Vec3) -> Mat3 {
     let z = normalize(normal);
     let sign = copysignf(1.0, z.z);
@@ -173,4 +207,8 @@ pub fn sample_disk(ruv: Vec2) -> Vec2 {
     let r = f32::sqrt(ruv.y);
     let phi = 2.0 * PI * ruv.x;
     vec2(f32::cos(phi) * r, f32::sin(phi) * r)
+}
+
+pub fn to_srgb(component: f32, gamma: f32) -> u8 {
+    (component.max(0.0).min(1.0).powf(1.0 / gamma) * 255.0) as u8
 }

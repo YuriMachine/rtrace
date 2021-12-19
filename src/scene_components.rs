@@ -1,32 +1,15 @@
 use crate::bvh::BvhIntersection;
+use crate::trace::Ray;
 use crate::utils::*;
 use glm::{dot, mat3x4, normalize, triangle_normal, vec2, vec3};
 use glm::{BVec4, Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
+use serde::Deserialize;
 use std::f32::consts::PI;
 const INVALID: usize = usize::MAX;
-const RAY_EPS: f32 = 1e-4;
 const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
 
-#[derive(Debug)]
-pub struct Ray {
-    pub origin: Vec3,
-    pub direction: Vec3,
-    pub tmin: f32,
-    pub tmax: f32,
-}
-
-impl Default for Ray {
-    fn default() -> Self {
-        Ray {
-            origin: Vec3::zeros(),
-            direction: vec3(0.0, 0.0, 1.0),
-            tmin: RAY_EPS,
-            tmax: f32::MAX,
-        }
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
+#[serde(default)]
 pub struct Camera {
     pub frame: Mat3x4,
     pub orthographic: bool,
@@ -107,7 +90,8 @@ impl Camera {
     }
 }
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MaterialType {
     Matte,
     Glossy,
@@ -119,7 +103,10 @@ pub enum MaterialType {
     Gltfpbr,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(default)]
 pub struct Material {
+    #[serde(rename = "type")]
     pub m_type: MaterialType,
     pub emission: Vec3,
     pub color: Vec3,
@@ -275,15 +262,19 @@ impl MaterialPoint {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Deserialize, Debug)]
+#[serde(default)]
 pub struct Texture {
     pub width: i32,
     pub height: i32,
     pub linear: bool,
     pub pixelsf: Vec<Vec4>,
     pub pixelsb: Vec<BVec4>,
+    pub uri: String,
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(default)]
 pub struct Instance {
     pub frame: Mat3x4,
     pub shape: usize,
@@ -300,6 +291,8 @@ impl Default for Instance {
     }
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(default)]
 pub struct Environment {
     pub frame: Mat3x4,
     pub emission: Vec3,
@@ -316,7 +309,8 @@ impl Default for Environment {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
 pub struct Shape {
     // element data
     // this should be usize but you need to handle embree
@@ -331,8 +325,29 @@ pub struct Shape {
     pub colors: Vec<Vec4>,
     pub radius: Vec<f32>,
     pub tangents: Vec<Vec4>,
+    pub uri: String,
 }
+/*
+impl<'de> Deserialize<'de> for Shape {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::de::Deserializer<'de>,
+    {
+        struct ShapeVisitor;
 
+        impl<'de> serde::de::Visitor<'de> for ShapeVisitor {
+            type Value = Shape;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                todo!()
+            }
+        }
+
+        const FIELDS: &'static [&'static str] = &["points", "lines", "triangles", "quads"];
+        deserializer.deserialize_struct("Shape", FIELDS, ShapeVisitor)
+    }
+}
+ */
 impl Shape {
     pub fn eval_position(&self, intersection: &BvhIntersection) -> Vec3 {
         let element = intersection.element;

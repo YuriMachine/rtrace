@@ -1,4 +1,4 @@
-use crate::{scene::Scene, scene_components::Ray};
+use crate::{scene::Scene, trace::Ray};
 use glm::{vec2, Vec2};
 
 #[derive(Debug)]

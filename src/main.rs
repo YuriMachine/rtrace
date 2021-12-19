@@ -5,7 +5,10 @@ use rtrace::trace::*;
 use rtrace::utils::*;
 
 pub fn main() {
-    let scene = Scene::make_cornellbox();
+    //let scene = Scene::make_cornellbox();
+    //let scene = Scene::from_json("C:\\Users\\porcu\\Documents\\University\\computer graphics\\02_pathtrace_out\\tests\\01_cornellbox\\cornellbox.json");
+    let scene = Scene::from_json("C:\\Users\\porcu\\Documents\\University\\computer graphics\\02_pathtrace_out\\tests\\02_matte\\matte.json");
+    //println!("{:#?}", scene);
     let device = embree::Device::new();
     let bvh = BvhData::from_scene(&device, &scene, false);
     let params = RaytraceParams::default();
@@ -24,9 +27,9 @@ pub fn main() {
     for pixel in state.image.chunks(state.width) {
         for rgb in pixel {
             let scaled = rgb / state.samples as f32;
-            image_bytes.push((scaled.x.max(0.0).min(1.0).powf(1.0 / 2.2) * 255.0) as u8);
-            image_bytes.push((scaled.y.max(0.0).min(1.0).powf(1.0 / 2.2) * 255.0) as u8);
-            image_bytes.push((scaled.z.max(0.0).min(1.0).powf(1.0 / 2.2) * 255.0) as u8);
+            image_bytes.push(to_srgb(scaled.x, 2.2));
+            image_bytes.push(to_srgb(scaled.y, 2.2));
+            image_bytes.push(to_srgb(scaled.z, 2.2));
             /*
             let wrapped = image::Rgb([rgb.x, rgb.y, rgb.z]);
             let rgb8 = image::codecs::hdr::to_rgbe8(wrapped);

@@ -1,14 +1,22 @@
 use crate::bvh::BvhIntersection;
 use crate::utils::*;
-use glm::{clamp, dot, log, mat3x4, vec3, vec4};
+use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, Vec2};
 use glm::{Vec3, Vec4};
+use linked_hash_map::LinkedHashMap;
+use ply::ply::Property;
+use ply_rs as ply;
+use serde::Deserialize;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::BufReader;
+use std::path::Path;
 const INVALID: usize = usize::MAX;
 const RAY_EPS: f32 = 1e-4;
 const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
 use crate::scene_components::*;
 
-#[derive(Default)]
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
 pub struct Scene {
     pub cameras: Vec<Camera>,
     pub instances: Vec<Instance>,
@@ -212,6 +220,29 @@ impl Scene {
         }
     }
 
+    pub fn eval_environment(&self, direction: Vec3) -> Vec3 {
+        let mut emission = vec3(0.0, 0.0, 0.0);
+        for environment in &self.environments {
+            let wl =
+                transform_direction_frame(&inverse_frame(&environment.frame, false), &direction);
+            let mut texcoord = vec2(
+                f32::atan2(wl.z, wl.x) / (2.0 * PI),
+                f32::acos(wl.y.clamp(-1.0, 1.0)) / PI,
+            );
+            if texcoord.x < 0.0 {
+                texcoord.x += 1.0;
+            }
+
+            //let texture = self.eval_texture(environment.emission_tex, &texcoord).xyz();
+            emission += environment.emission; //.component_mul(&texture);
+        }
+        emission
+    }
+
+    pub fn eval_texture(&self, texture: usize, uv: &Vec2) -> Vec4 {
+        todo!()
+    }
+
     pub fn eval_material(&self, intersection: &BvhIntersection) -> MaterialPoint {
         let instance = &self.instances[intersection.instance];
         let material = &self.materials[instance.material];
@@ -283,6 +314,34 @@ impl Scene {
 
     fn eval_texcoord(&self, instance: &Instance, intersection: &BvhIntersection) {
         todo!()
+    }
+
+    pub fn from_json<P: AsRef<Path> + Copy>(path: P) -> Scene {
+        let file = File::open(path).unwrap();
+        let reader = BufReader::new(file);
+        let mut scene: Scene = serde_json::from_reader(reader).expect("unable to parse JSON");
+
+        for shape in &mut scene.shapes {
+            if !shape.uri.is_empty() {
+                let mut uri = File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
+                let p = ply::parser::Parser::<ply::ply::DefaultElement>::new();
+                let ply = p.read_ply(&mut uri).unwrap();
+                //println!("{:#?}", ply);
+                if ply.payload.get("vertex").is_some() {
+                    for vertex in &ply.payload["vertex"] {
+                        ply_get_positions(vertex, &mut shape.positions);
+                        ply_get_normals(vertex, &mut shape.normals);
+                        ply_get_texcoords(vertex, &mut shape.texcoords);
+                    }
+                }
+                if ply.payload.get("face").is_some() {
+                    for face in &ply.payload["face"] {
+                        ply_get_face(face, shape);
+                    }
+                }
+            }
+        }
+        scene
     }
 
     pub fn make_cornellbox() -> Scene {
@@ -559,4 +618,82 @@ impl Scene {
             ..Default::default()
         }
     }
+}
+
+fn ply_get_face(face: &LinkedHashMap<String, Property>, shape: &mut Shape) {
+    if face.get("vertex_indices").is_none() {
+        return;
+    }
+    let vertex_indices = match &face["vertex_indices"] {
+        Property::ListInt(c) => c,
+        _ => unreachable!(),
+    };
+    if vertex_indices.len() == 3 {
+        shape.triangles.push(vec3(
+            vertex_indices[0],
+            vertex_indices[1],
+            vertex_indices[2],
+        ));
+    } else if vertex_indices.len() == 4 {
+        shape.quads.push(vec4(
+            vertex_indices[0],
+            vertex_indices[1],
+            vertex_indices[2],
+            vertex_indices[3],
+        ));
+    }
+}
+
+fn ply_get_positions(vertex: &LinkedHashMap<String, Property>, positions: &mut Vec<Vec3>) {
+    if vertex.get("x").is_none() || vertex.get("y").is_none() || vertex.get("z").is_none() {
+        return;
+    }
+    let x = match vertex["x"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let y = match vertex["y"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let z = match vertex["z"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    positions.push(vec3(x, y, z));
+}
+
+fn ply_get_normals(vertex: &LinkedHashMap<String, Property>, normals: &mut Vec<Vec3>) {
+    if vertex.get("nx").is_none() || vertex.get("ny").is_none() || vertex.get("nz").is_none() {
+        return;
+    }
+    let nx = match vertex["nx"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let ny = match vertex["ny"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let nz = match vertex["nz"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    normals.push(vec3(nx, ny, nz));
+}
+
+fn ply_get_texcoords(vertex: &LinkedHashMap<String, Property>, texcoords: &mut Vec<Vec2>) {
+    if vertex.get("u").is_none() || vertex.get("v").is_none() {
+        return;
+    }
+    let u = match vertex["u"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let v = match vertex["v"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    // flipping
+    texcoords.push(vec2(u, 1.0 - v));
 }
