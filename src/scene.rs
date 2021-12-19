@@ -1,7 +1,9 @@
 use crate::bvh::BvhIntersection;
+use crate::scene_components::*;
 use crate::utils::*;
-use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, Vec2};
+use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, TVec2, Vec2};
 use glm::{Vec3, Vec4};
+use image::io::Reader as ImageReader;
 use linked_hash_map::LinkedHashMap;
 use ply::ply::Property;
 use ply_rs as ply;
@@ -10,10 +12,10 @@ use std::f32::consts::PI;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+
 const INVALID: usize = usize::MAX;
 const RAY_EPS: f32 = 1e-4;
 const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
-use crate::scene_components::*;
 
 #[derive(Default, Debug, Deserialize)]
 #[serde(default)]
@@ -323,21 +325,67 @@ impl Scene {
 
         for shape in &mut scene.shapes {
             if !shape.uri.is_empty() {
-                let mut uri = File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
-                let p = ply::parser::Parser::<ply::ply::DefaultElement>::new();
-                let ply = p.read_ply(&mut uri).unwrap();
+                let mut ply_file =
+                    File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
+                let parser = ply::parser::Parser::<ply::ply::DefaultElement>::new();
+                let ply = parser.read_ply(&mut ply_file).unwrap();
                 //println!("{:#?}", ply);
                 if ply.payload.get("vertex").is_some() {
                     for vertex in &ply.payload["vertex"] {
                         ply_get_positions(vertex, &mut shape.positions);
                         ply_get_normals(vertex, &mut shape.normals);
                         ply_get_texcoords(vertex, &mut shape.texcoords);
+                        ply_get_colors(vertex, &mut shape.colors);
+                        ply_get_radius(vertex, &mut shape.radius);
                     }
                 }
                 if ply.payload.get("face").is_some() {
                     for face in &ply.payload["face"] {
-                        ply_get_face(face, shape);
+                        ply_get_faces(face, shape);
                     }
+                }
+                if ply.payload.get("line").is_some() {
+                    for line in &ply.payload["line"] {
+                        ply_get_lines(line, &mut shape.lines);
+                    }
+                }
+                if ply.payload.get("point").is_some() {
+                    for point in &ply.payload["point"] {
+                        ply_get_points(point, &mut shape.points);
+                    }
+                }
+            }
+        }
+
+        for texture in &mut scene.textures {
+            if !texture.uri.is_empty() {
+                let path = path.as_ref().parent().unwrap().join(&texture.uri);
+                let extension = match path.extension() {
+                    None => "",
+                    Some(os_str) => {
+                        if os_str == "png" {
+                            "png"
+                        } else if os_str == "hdr" {
+                            "hdr"
+                        } else {
+                            ""
+                        }
+                    }
+                };
+                if extension == "png" {
+                    let rgba = image::open(path).unwrap().into_rgba8();
+                    texture.height = rgba.height();
+                    texture.width = rgba.width();
+                    texture.linear = false;
+                    texture.bytes = rgba.to_vec();
+                } else if extension == "hdr" {
+                    let file = std::io::BufReader::new(std::fs::File::open(&path).unwrap());
+                    let decoder = image::codecs::hdr::HdrDecoder::new(file).unwrap();
+                    let metadata = decoder.metadata();
+                    texture.height = metadata.height;
+                    texture.width = metadata.width;
+                    texture.linear = true;
+                    texture.hdr = decoder.read_image_hdr().unwrap();
                 }
             }
         }
@@ -620,30 +668,6 @@ impl Scene {
     }
 }
 
-fn ply_get_face(face: &LinkedHashMap<String, Property>, shape: &mut Shape) {
-    if face.get("vertex_indices").is_none() {
-        return;
-    }
-    let vertex_indices = match &face["vertex_indices"] {
-        Property::ListInt(c) => c,
-        _ => unreachable!(),
-    };
-    if vertex_indices.len() == 3 {
-        shape.triangles.push(vec3(
-            vertex_indices[0],
-            vertex_indices[1],
-            vertex_indices[2],
-        ));
-    } else if vertex_indices.len() == 4 {
-        shape.quads.push(vec4(
-            vertex_indices[0],
-            vertex_indices[1],
-            vertex_indices[2],
-            vertex_indices[3],
-        ));
-    }
-}
-
 fn ply_get_positions(vertex: &LinkedHashMap<String, Property>, positions: &mut Vec<Vec3>) {
     if vertex.get("x").is_none() || vertex.get("y").is_none() || vertex.get("z").is_none() {
         return;
@@ -696,4 +720,89 @@ fn ply_get_texcoords(vertex: &LinkedHashMap<String, Property>, texcoords: &mut V
     };
     // flipping
     texcoords.push(vec2(u, 1.0 - v));
+}
+
+fn ply_get_radius(vertex: &LinkedHashMap<String, Property>, radii: &mut Vec<f32>) {
+    if vertex.get("radius").is_none() {
+        return;
+    }
+    let radius = match vertex["radius"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    radii.push(radius);
+}
+
+fn ply_get_colors(vertex: &LinkedHashMap<String, Property>, colors: &mut Vec<Vec4>) {
+    if vertex.get("red").is_none() || vertex.get("green").is_none() || vertex.get("blue").is_none()
+    {
+        return;
+    }
+    let red = match vertex["red"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let green = match vertex["green"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    let blue = match vertex["blue"] {
+        Property::Float(c) => c,
+        _ => unreachable!(),
+    };
+    if vertex.get("alpha").is_some() {
+        let alpha = match vertex["alpha"] {
+            Property::Float(c) => c,
+            _ => unreachable!(),
+        };
+        colors.push(vec4(red, green, blue, alpha));
+    } else {
+        colors.push(vec4(red, green, blue, 1.0));
+    }
+}
+
+fn ply_get_faces(face: &LinkedHashMap<String, Property>, shape: &mut Shape) {
+    if face.get("vertex_indices").is_none() {
+        return;
+    }
+    let vertex_indices = match &face["vertex_indices"] {
+        Property::ListInt(c) => c,
+        _ => unreachable!(),
+    };
+    if vertex_indices.len() == 3 {
+        shape.triangles.push(vec3(
+            vertex_indices[0],
+            vertex_indices[1],
+            vertex_indices[2],
+        ));
+    } else if vertex_indices.len() == 4 {
+        shape.quads.push(vec4(
+            vertex_indices[0],
+            vertex_indices[1],
+            vertex_indices[2],
+            vertex_indices[3],
+        ));
+    }
+}
+
+fn ply_get_points(point: &LinkedHashMap<String, Property>, points: &mut Vec<i32>) {
+    if point.get("vertex_indices").is_none() {
+        return;
+    }
+    let vertex_indices = match point["vertex_indices"] {
+        Property::Int(c) => c,
+        _ => unreachable!(),
+    };
+    points.push(vertex_indices);
+}
+
+fn ply_get_lines(line: &LinkedHashMap<String, Property>, lines: &mut Vec<TVec2<i32>>) {
+    if line.get("vertex_indices").is_none() {
+        return;
+    }
+    let vertex_indices = match &line["vertex_indices"] {
+        Property::ListInt(c) => c,
+        _ => unreachable!(),
+    };
+    lines.push(vec2(vertex_indices[0], vertex_indices[1]))
 }

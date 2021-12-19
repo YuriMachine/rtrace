@@ -265,11 +265,14 @@ impl MaterialPoint {
 #[derive(Default, Deserialize, Debug)]
 #[serde(default)]
 pub struct Texture {
-    pub width: i32,
-    pub height: i32,
+    pub width: u32,
+    pub height: u32,
     pub linear: bool,
-    pub pixelsf: Vec<Vec4>,
-    pub pixelsb: Vec<BVec4>,
+    //pub hdr: Vec<Vec3>,
+    #[serde(skip)]
+    pub hdr: Vec<image::Rgb<f32>>,
+    #[serde(skip)]
+    pub bytes: Vec<u8>,
     pub uri: String,
 }
 
@@ -327,27 +330,7 @@ pub struct Shape {
     pub tangents: Vec<Vec4>,
     pub uri: String,
 }
-/*
-impl<'de> Deserialize<'de> for Shape {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::de::Deserializer<'de>,
-    {
-        struct ShapeVisitor;
 
-        impl<'de> serde::de::Visitor<'de> for ShapeVisitor {
-            type Value = Shape;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                todo!()
-            }
-        }
-
-        const FIELDS: &'static [&'static str] = &["points", "lines", "triangles", "quads"];
-        deserializer.deserialize_struct("Shape", FIELDS, ShapeVisitor)
-    }
-}
- */
 impl Shape {
     pub fn eval_position(&self, intersection: &BvhIntersection) -> Vec3 {
         let element = intersection.element;
