@@ -152,9 +152,7 @@ pub fn shade_raytrace(
     while bounce < params.bounces {
         let intersection = bvh.intersect(ray);
         if !intersection.hit {
-            if bounce > 0 {
-                radiance += weight.component_mul(&scene.eval_environment(ray.direction));
-            }
+            radiance += weight.component_mul(&scene.eval_environment(ray.direction));
             break;
         }
 

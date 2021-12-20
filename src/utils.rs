@@ -212,3 +212,19 @@ pub fn sample_disk(ruv: Vec2) -> Vec2 {
 pub fn to_srgb(component: f32, gamma: f32) -> u8 {
     (component.max(0.0).min(1.0).powf(1.0 / gamma) * 255.0) as u8
 }
+
+fn srgb_to_rgb(color: Vec4) -> Vec4 {
+    let compute_srgb = |srgb: f32| -> f32 {
+        if srgb <= 0.04045 {
+            srgb / 12.92
+        } else {
+            ((srgb + 0.055) / (1.0 + 0.055)).powf(2.4)
+        }
+    };
+    vec4(
+        compute_srgb(color.x),
+        compute_srgb(color.y),
+        compute_srgb(color.z),
+        compute_srgb(color.w),
+    )
+}

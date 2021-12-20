@@ -117,8 +117,42 @@ impl BvhData<'_> {
                     rtcReleaseGeometry(egeometry);
                 }
             } else if !shape.quads.is_empty() {
-                let _prova2 = 1;
-                // handle quads
+                unsafe {
+                    use embree::sys::*;
+                    use embree::*;
+                    let egeometry = rtcNewGeometry(device.handle, GeometryType::QUAD);
+                    rtcSetGeometryVertexAttributeCount(egeometry, 1);
+
+                    let embree_positions = rtcSetNewGeometryBuffer(
+                        egeometry,
+                        BufferType::VERTEX,
+                        0,
+                        Format::FLOAT3,
+                        3 * 4,
+                        shape.positions.len(),
+                    );
+                    let embree_quads = rtcSetNewGeometryBuffer(
+                        egeometry,
+                        BufferType::INDEX,
+                        0,
+                        Format::UINT4,
+                        4 * 4,
+                        shape.quads.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        shape.positions.as_ptr() as *mut std::ffi::c_void,
+                        embree_positions,
+                        shape.positions.len() * 12,
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        shape.quads.as_ptr() as *mut std::ffi::c_void,
+                        embree_quads,
+                        shape.quads.len() * 16,
+                    );
+                    rtcCommitGeometry(egeometry);
+                    rtcAttachGeometryByID(escene.handle(), egeometry, 0);
+                    rtcReleaseGeometry(egeometry);
+                }
             } else {
                 // handle errors
             }

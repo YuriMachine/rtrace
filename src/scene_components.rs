@@ -1,7 +1,7 @@
 use crate::bvh::BvhIntersection;
 use crate::trace::Ray;
 use crate::utils::*;
-use glm::{dot, mat3x4, normalize, triangle_normal, vec2, vec3};
+use glm::{dot, mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
 use glm::{BVec4, Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
 use serde::Deserialize;
 use std::f32::consts::PI;
@@ -268,12 +268,37 @@ pub struct Texture {
     pub width: u32,
     pub height: u32,
     pub linear: bool,
-    //pub hdr: Vec<Vec3>,
     #[serde(skip)]
     pub hdr: Vec<image::Rgb<f32>>,
     #[serde(skip)]
-    pub bytes: Vec<u8>,
+    pub bytes: image::RgbaImage,
     pub uri: String,
+}
+
+impl Texture {
+    pub fn lookup(&self, i: u32, j: u32, as_linear: bool) -> Vec4 {
+        let color = if !self.hdr.is_empty() {
+            // handle hdr
+            let color = self.hdr[(j * self.width + i) as usize].0;
+            vec4(color[0], color[1], color[2], 1.0)
+        } else if !self.bytes.is_empty() {
+            // handle bytes
+            let color = self.bytes.get_pixel(i, j);
+            vec4(
+                color[0] as f32 / 255.0,
+                color[1] as f32 / 255.0,
+                color[2] as f32 / 255.0,
+                color[3] as f32 / 255.0,
+            )
+        } else {
+            vec4(1.0, 1.0, 1.0, 1.0)
+        };
+        if as_linear && !self.linear {
+            srgb_to_rgb(color)
+        } else {
+            color
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]

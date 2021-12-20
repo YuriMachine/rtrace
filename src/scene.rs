@@ -235,43 +235,93 @@ impl Scene {
                 texcoord.x += 1.0;
             }
 
-            //let texture = self.eval_texture(environment.emission_tex, &texcoord).xyz();
-            emission += environment.emission; //.component_mul(&texture);
+            let texture = self
+                .eval_texture(environment.emission_tex, &texcoord, false, false, false)
+                .xyz();
+            emission += environment.emission.component_mul(&texture);
         }
         emission
     }
 
-    pub fn eval_texture(&self, texture: usize, uv: &Vec2) -> Vec4 {
-        todo!()
+    pub fn eval_texture(
+        &self,
+        texture_idx: usize,
+        uv: &Vec2,
+        as_linear: bool,
+        no_interpolation: bool,
+        clamp_to_edge: bool,
+    ) -> Vec4 {
+        if texture_idx == INVALID {
+            return vec4(1.0, 1.0, 1.0, 1.0);
+        }
+        let texture = &self.textures[texture_idx];
+        if texture.width == 0 || texture.height == 0 {
+            return Vec4::zeros();
+        }
+        // get coordinates normalized for tiling
+        let (s, t) = if clamp_to_edge {
+            (
+                uv.x.clamp(0.0, 1.0) * texture.width as f32,
+                uv.y.clamp(0.0, 1.0) * texture.height as f32,
+            )
+        } else {
+            let mut s = (uv.x % 1.0) * texture.width as f32;
+            if s < 0.0 {
+                s += texture.width as f32;
+            }
+            let mut t = (uv.y % 1.0) * texture.height as f32;
+            if t < 0.0 {
+                t += texture.height as f32;
+            }
+            (s, t)
+        };
+
+        // get image coordinates and residuals
+        let i = (s as u32).clamp(0, texture.width - 1);
+        let j = (t as u32).clamp(0, texture.height - 1);
+        let ii = (i + 1) % texture.width;
+        let jj = (j + 1) % texture.height;
+        let u = s - i as f32;
+        let v = t - j as f32;
+
+        // handle interpolation
+        if no_interpolation {
+            texture.lookup(i, j, as_linear)
+        } else {
+            texture.lookup(i, j, as_linear) * (1.0 - u) * (1.0 - v)
+                + texture.lookup(i, jj, as_linear) * (1.0 - u) * v
+                + texture.lookup(ii, j, as_linear) * u * (1.0 - v)
+                + texture.lookup(ii, jj, as_linear) * u * v
+        }
     }
 
     pub fn eval_material(&self, intersection: &BvhIntersection) -> MaterialPoint {
         let instance = &self.instances[intersection.instance];
         let material = &self.materials[instance.material];
-        //let texcoord = self.eval_texcoord(instance, intersection);
+        let texcoord = &self.eval_texcoord(instance, intersection);
 
         // evaluate textures
-        /*
-        let emission_tex = eval_texture(
-            scene, material.emission_tex, texcoord, true);
-        let color_tex     = eval_texture(scene, material.color_tex, texcoord, true);
-        let roughness_tex = eval_texture(
-            scene, material.roughness_tex, texcoord, false);
-        let scattering_tex = eval_texture(
-            scene, material.scattering_tex, texcoord, true);
-        */
+        let emission_tex = self.eval_texture(material.emission_tex, texcoord, true, false, false);
+        let color_tex = self.eval_texture(material.color_tex, texcoord, true, false, false);
+        let roughness_tex =
+            self.eval_texture(material.roughness_tex, texcoord, false, false, false);
+        let scattering_tex =
+            self.eval_texture(material.scattering_tex, texcoord, true, false, false);
         let color_shp = self.eval_color(instance, intersection);
 
         // material point
         let m_type = material.m_type;
-        let emission = material.emission; // * xyz(emission_tex);
-        let color = material.color.component_mul(&color_shp.xyz()); // * xyz(color_tex);
-        let opacity = material.opacity; // * color_tex.w * color_shp.w;
-        let metallic = material.metallic; // * roughness_tex.z;
-        let mut roughness = material.roughness; // * roughness_tex.y;
+        let emission = material.emission.component_mul(&emission_tex.xyz());
+        let color = material
+            .color
+            .component_mul(&color_shp.xyz())
+            .component_mul(&color_tex.xyz());
+        let opacity = material.opacity * color_tex.w * color_shp.w;
+        let metallic = material.metallic * roughness_tex.z;
+        let mut roughness = material.roughness * roughness_tex.y;
         roughness *= roughness;
         let ior = material.ior;
-        let scattering = material.scattering; //* xyz(scattering_tex);
+        let scattering = material.scattering.component_mul(&(scattering_tex).xyz());
         let scanisotropy = material.scanisotropy;
         let trdepth = material.trdepth;
 
@@ -314,8 +364,42 @@ impl Scene {
         }
     }
 
-    fn eval_texcoord(&self, instance: &Instance, intersection: &BvhIntersection) {
-        todo!()
+    fn eval_texcoord(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec2 {
+        let shape = &self.shapes[instance.shape];
+        let element = intersection.element;
+        let uv = intersection.uv;
+        if shape.texcoords.is_empty() {
+            return uv;
+        }
+        if !shape.triangles.is_empty() {
+            let t = shape.triangles[element];
+            return interpolate_triangle(
+                &shape.texcoords[t.x as usize],
+                &shape.texcoords[t.y as usize],
+                &shape.texcoords[t.z as usize],
+                &uv,
+            );
+        } else if !shape.quads.is_empty() {
+            let q = shape.quads[element];
+            return interpolate_quad(
+                &shape.texcoords[q.x as usize],
+                &shape.texcoords[q.y as usize],
+                &shape.texcoords[q.z as usize],
+                &shape.texcoords[q.w as usize],
+                &uv,
+            );
+        } else if !shape.lines.is_empty() {
+            let l = shape.lines[element];
+            return interpolate_line(
+                &shape.texcoords[l.x as usize],
+                &shape.texcoords[l.y as usize],
+                uv.x,
+            );
+        } else if !shape.points.is_empty() {
+            return shape.texcoords[shape.points[element as usize] as usize];
+        } else {
+            return Vec2::zeros();
+        }
     }
 
     pub fn from_json<P: AsRef<Path> + Copy>(path: P) -> Scene {
@@ -377,7 +461,7 @@ impl Scene {
                     texture.height = rgba.height();
                     texture.width = rgba.width();
                     texture.linear = false;
-                    texture.bytes = rgba.to_vec();
+                    texture.bytes = rgba;
                 } else if extension == "hdr" {
                     let file = std::io::BufReader::new(std::fs::File::open(&path).unwrap());
                     let decoder = image::codecs::hdr::HdrDecoder::new(file).unwrap();
