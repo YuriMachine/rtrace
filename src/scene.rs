@@ -182,7 +182,27 @@ impl Scene {
     }
 
     fn eval_normalmap(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
-        Vec3::zeros()
+        let shape = &self.shapes[instance.shape];
+        let material = &self.materials[instance.material];
+        let element = intersection.element;
+        // apply normal mapping
+        let normal = self.eval_normal(instance, intersection);
+        let texcoord = self.eval_texcoord(instance, intersection);
+        if (material.normal_tex != INVALID
+            && (!shape.triangles.is_empty() || !shape.quads.is_empty()))
+        {
+            /*
+            let normalmap  = -1.0 + 2.0 * self.eval_texture(material.normal_tex, &texcoord, false, false, false).xyz();
+            let (tu, tv)    = eval_element_tangents(scene, instance, element);
+            let frame       = frame3f{tu, tv, normal, {0, 0, 0}};
+            frame.x          = orthonormalize(frame.x, frame.z);
+            frame.y          = normalize(cross(frame.z, frame.x));
+            let flip_v      = dot(frame.y, tv) < 0;
+            normalmap.y *= flip_v ? 1 : -1;  // flip vertical axis
+            normal = transform_normal(frame, normalmap);
+            */
+        }
+        todo!()
     }
 
     fn eval_color(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec4 {
@@ -265,15 +285,18 @@ impl Scene {
                 uv.y.clamp(0.0, 1.0) * texture.height as f32,
             )
         } else {
-            let mut s = (uv.x % 1.0) * texture.width as f32;
-            if s < 0.0 {
-                s += texture.width as f32;
-            }
-            let mut t = (uv.y % 1.0) * texture.height as f32;
-            if t < 0.0 {
-                t += texture.height as f32;
-            }
-            (s, t)
+            (
+                if ((uv.x % 1.0) * texture.width as f32) < 0.0 {
+                    (uv.x % 1.0) * texture.width as f32 + texture.width as f32
+                } else {
+                    (uv.x % 1.0) * texture.width as f32
+                },
+                if ((uv.y % 1.0) * texture.height as f32) < 0.0 {
+                    (uv.y % 1.0) * texture.height as f32 + texture.height as f32
+                } else {
+                    (uv.y % 1.0) * texture.height as f32
+                },
+            )
         };
 
         // get image coordinates and residuals
@@ -413,7 +436,7 @@ impl Scene {
                     File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
                 let parser = ply::parser::Parser::<ply::ply::DefaultElement>::new();
                 let ply = parser.read_ply(&mut ply_file).unwrap();
-                //println!("{:#?}", ply);
+
                 if ply.payload.get("vertex").is_some() {
                     for vertex in &ply.payload["vertex"] {
                         ply_get_positions(vertex, &mut shape.positions);

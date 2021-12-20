@@ -7,7 +7,7 @@ use rtrace::utils::*;
 pub fn main() {
     //let scene = Scene::make_cornellbox();
     //let scene = Scene::from_json("C:\\Users\\porcu\\Documents\\University\\computer graphics\\02_pathtrace_out\\tests\\01_cornellbox\\cornellbox.json");
-    let scene = Scene::from_json("C:\\Users\\porcu\\Documents\\University\\computer graphics\\02_pathtrace_out\\tests\\02_matte\\matte.json");
+    let scene = Scene::from_json("C:\\Users\\porcu\\Documents\\University\\computer graphics\\02_pathtrace_out\\tests\\04_plastic\\plastic.json");
     //println!("{:#?}", scene);
     let device = embree::Device::new();
     let bvh = BvhData::from_scene(&device, &scene, false);
