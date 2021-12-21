@@ -1,5 +1,6 @@
 use crate::bvh::BvhIntersection;
 use crate::scene_components::*;
+use crate::shading::MaterialPoint;
 use crate::utils::*;
 use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, TVec2, Vec2};
 use glm::{Vec3, Vec4};

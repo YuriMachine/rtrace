@@ -182,14 +182,13 @@ pub fn shade_raytrace(
                 / material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
             weight = weight.component_mul(&eval_bsdfcos);
         } else {
-            /*
-            incoming = sample_delta(material, normal, outgoing, rand1f(rng));
-            if is_null(incoming, epsilon()) {
+            incoming = material.sample_delta(&normal, &outgoing, rand1(rng));
+            if is_null(&incoming, epsilon()) {
                 break;
             }
-            weight *= eval_delta(material, normal, outgoing, incoming) /
-                    sample_delta_pdf(material, normal, outgoing, incoming);
-            */
+            let eval_delta = material.eval_delta(&normal, &outgoing, &incoming)
+                / material.sample_delta_pdf(&normal, &outgoing, &incoming);
+            weight = weight.component_mul(&eval_delta);
         }
 
         // check weight
