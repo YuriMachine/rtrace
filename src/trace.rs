@@ -1,15 +1,14 @@
-use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
-use glm::{Vec3, Vec4};
-use parking_lot::Mutex;
-use rand::prelude::SmallRng;
-use rayon::prelude::*;
-
 use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
 use crate::{
     scene::*,
     utils::{rand2, RaytraceParams, RaytraceState},
 };
+use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
+use glm::{Vec3, Vec4};
+use parking_lot::Mutex;
+use rand::prelude::SmallRng;
+use rayon::prelude::*;
 
 const RAY_EPS: f32 = 1e-4;
 

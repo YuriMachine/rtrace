@@ -7,7 +7,6 @@ use glm::{Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
 use serde::Deserialize;
 use std::f32::consts::PI;
 const INVALID: usize = usize::MAX;
-const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
 
 #[derive(Debug, Deserialize)]
 #[serde(default)]
@@ -276,14 +275,14 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        let F1 = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
+        let f1 = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
         let halfway = normalize(&(incoming + outgoing));
-        let F = shading::fresnel_dielectric(self.ior, &halfway, incoming);
-        let D = shading::microfacet_distribution(self.roughness, &up_normal, &halfway, true);
-        let G =
+        let f = shading::fresnel_dielectric(self.ior, &halfway, incoming);
+        let d = shading::microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+        let g =
             shading::microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
-        self.color * (1.0 - F1) / PI * (dot(&up_normal, incoming).abs())
-            + vec3(1.0, 1.0, 1.0) * F * D * G
+        self.color * (1.0 - f1) / PI * (dot(&up_normal, incoming).abs())
+            + vec3(1.0, 1.0, 1.0) * f * d * g
                 / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
                 * (dot(&up_normal, incoming).abs())
     }
@@ -295,10 +294,10 @@ impl MaterialPoint {
             *normal
         };
         let halfway = normalize(&(outgoing + incoming));
-        let F = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
-        F * shading::sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
+        let f = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
+        f * shading::sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
             / (4.0 * (dot(outgoing, &halfway).abs()))
-            + (1.0 - F) * shading::sample_hemisphere_cos_pdf(&up_normal, incoming)
+            + (1.0 - f) * shading::sample_hemisphere_cos_pdf(&up_normal, incoming)
     }
 }
 

@@ -186,21 +186,13 @@ pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
 
 pub fn basis_fromz(normal: &Vec3) -> Mat3 {
     let z = normalize(normal);
-    let sign = copysignf(1.0, z.z);
+    let sign = 1.0_f32.copysign(z.z);
     let a = -1.0 / (sign + z.z);
     let b = z.x * z.y * a;
     let x = vec3(1.0 + sign * z.x * z.x * a, sign * b, -sign * z.x);
     let y = vec3(b, sign + z.y * z.y * a, -z.y);
 
     make_mat3(&[x.as_slice(), y.as_slice(), z.as_slice()].concat())
-}
-
-pub fn copysignf(magnitude: f32, sign: f32) -> f32 {
-    let mut ux = magnitude.to_bits();
-    let uy = sign.to_bits();
-    ux &= 0x7fffffff;
-    ux |= uy & 0x80000000;
-    f32::from_bits(ux)
 }
 
 pub fn sample_disk(ruv: Vec2) -> Vec2 {

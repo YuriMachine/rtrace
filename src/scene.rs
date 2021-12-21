@@ -3,7 +3,6 @@ use crate::scene_components::*;
 use crate::utils::*;
 use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, TVec2, Vec2};
 use glm::{Vec3, Vec4};
-use image::io::Reader as ImageReader;
 use linked_hash_map::LinkedHashMap;
 use ply::ply::Property;
 use ply_rs as ply;
@@ -14,7 +13,6 @@ use std::io::BufReader;
 use std::path::Path;
 
 const INVALID: usize = usize::MAX;
-const RAY_EPS: f32 = 1e-4;
 const MIN_ROUGHNESS: f32 = 0.03 * 0.03;
 
 #[derive(Default, Debug, Deserialize)]
@@ -188,8 +186,8 @@ impl Scene {
         // apply normal mapping
         let normal = self.eval_normal(instance, intersection);
         let texcoord = self.eval_texcoord(instance, intersection);
-        if (material.normal_tex != INVALID
-            && (!shape.triangles.is_empty() || !shape.quads.is_empty()))
+        if material.normal_tex != INVALID
+            && (!shape.triangles.is_empty() || !shape.quads.is_empty())
         {
             /*
             let normalmap  = -1.0 + 2.0 * self.eval_texture(material.normal_tex, &texcoord, false, false, false).xyz();
