@@ -9,6 +9,8 @@ pub mod scene;
 #[allow(dead_code)]
 pub mod scene_components;
 #[allow(dead_code)]
+pub mod shading;
+#[allow(dead_code)]
 pub mod trace;
 #[allow(dead_code)]
 pub mod utils;

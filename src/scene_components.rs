@@ -1,4 +1,5 @@
 use crate::bvh::BvhIntersection;
+use crate::shading;
 use crate::trace::Ray;
 use crate::utils::*;
 use glm::{dot, mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
@@ -225,7 +226,7 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        Self::sample_hemisphere_cos(&up_normal, rn)
+        shading::sample_hemisphere_cos(&up_normal, rn)
     }
 
     fn eval_matte(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
@@ -244,7 +245,7 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        Self::sample_hemisphere_cos_pdf(&up_normal, incoming)
+        shading::sample_hemisphere_cos_pdf(&up_normal, incoming)
     }
 
     fn sample_glossy(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32, rn: &Vec2) -> Vec3 {
@@ -253,16 +254,16 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        if rnl < Self::fresnel_dielectric(self.ior, &up_normal, outgoing) {
-            let halfway = Self::sample_microfacet(self.roughness, &up_normal, rn, true);
+        if rnl < shading::fresnel_dielectric(self.ior, &up_normal, outgoing) {
+            let halfway = shading::sample_microfacet(self.roughness, &up_normal, rn, true);
             let incoming = glm::reflect_vec(&(-outgoing), &halfway);
-            if !Self::same_hemisphere(&up_normal, outgoing, &incoming) {
+            if !shading::same_hemisphere(&up_normal, outgoing, &incoming) {
                 Vec3::zeros()
             } else {
                 incoming
             }
         } else {
-            Self::sample_hemisphere_cos(&up_normal, rn)
+            shading::sample_hemisphere_cos(&up_normal, rn)
         }
     }
 
@@ -275,12 +276,12 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        let F1 = Self::fresnel_dielectric(self.ior, &up_normal, outgoing);
+        let F1 = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
         let halfway = normalize(&(incoming + outgoing));
-        let F = Self::fresnel_dielectric(self.ior, &halfway, incoming);
-        let D = Self::microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+        let F = shading::fresnel_dielectric(self.ior, &halfway, incoming);
+        let D = shading::microfacet_distribution(self.roughness, &up_normal, &halfway, true);
         let G =
-            Self::microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
+            shading::microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
         self.color * (1.0 - F1) / PI * (dot(&up_normal, incoming).abs())
             + vec3(1.0, 1.0, 1.0) * F * D * G
                 / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
@@ -294,140 +295,10 @@ impl MaterialPoint {
             *normal
         };
         let halfway = normalize(&(outgoing + incoming));
-        let F = Self::fresnel_dielectric(self.ior, &up_normal, outgoing);
-        F * Self::sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
+        let F = shading::fresnel_dielectric(self.ior, &up_normal, outgoing);
+        F * shading::sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
             / (4.0 * (dot(outgoing, &halfway).abs()))
-            + (1.0 - F) * Self::sample_hemisphere_cos_pdf(&up_normal, incoming)
-    }
-
-    pub fn sample_hemisphere_cos(normal: &Vec3, rn: &Vec2) -> Vec3 {
-        let z = f32::sqrt(rn.y);
-        let r = f32::sqrt(1.0 - z * z);
-        let phi = 2.0 * PI * rn.x;
-        let local_direction = vec3(r * f32::cos(phi), r * f32::sin(phi), z);
-        transform_direction_mat(&basis_fromz(normal), &local_direction)
-    }
-
-    fn sample_hemisphere_cos_pdf(normal: &Vec3, incoming: &Vec3) -> f32 {
-        let cosw = dot(normal, incoming);
-        if cosw <= 0.0 {
-            0.0
-        } else {
-            cosw / PI
-        }
-    }
-
-    fn fresnel_dielectric(eta: f32, normal: &Vec3, outgoing: &Vec3) -> f32 {
-        // Implementation from
-        // https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
-        let cosw = dot(normal, outgoing).abs();
-
-        let sin2 = 1.0 - cosw * cosw;
-        let eta2 = eta * eta;
-
-        let cos2t = 1.0 - sin2 / eta2;
-        if cos2t < 0.0 {
-            return 1.0;
-        } // tir
-
-        let t0 = f32::sqrt(cos2t);
-        let t1 = eta * t0;
-        let t2 = eta * cosw;
-
-        let rs = (cosw - t1) / (cosw + t1);
-        let rp = (t0 - t2) / (t0 + t2);
-
-        (rs * rs + rp * rp) / 2.0
-    }
-
-    fn microfacet_shadowing(
-        roughness: f32,
-        normal: &Vec3,
-        halfway: &Vec3,
-        outgoing: &Vec3,
-        incoming: &Vec3,
-    ) -> f32 {
-        Self::microfacet_shadowing1(roughness, normal, halfway, outgoing, true)
-            * Self::microfacet_shadowing1(roughness, normal, halfway, incoming, true)
-    }
-
-    fn microfacet_shadowing1(
-        roughness: f32,
-        normal: &Vec3,
-        halfway: &Vec3,
-        direction: &Vec3,
-        ggx: bool,
-    ) -> f32 {
-        // https://google.github.io/filament/Filament.html#materialsystem/specularbrdf
-        // http://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html
-        // https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#appendix-b-brdf-implementation
-        let cosine = dot(normal, direction);
-        let cosineh = dot(halfway, direction);
-        if cosine * cosineh <= 0.0 {
-            return 0.0;
-        }
-        let roughness2 = roughness * roughness;
-        let cosine2 = cosine * cosine;
-        if ggx {
-            return 2.0 * cosine.abs()
-                / (cosine.abs() + f32::sqrt(cosine2 - roughness2 * cosine2 + roughness2));
-        } else {
-            let ci = cosine.abs() / (roughness * f32::sqrt(1.0 - cosine2));
-            if ci < 1.6 {
-                return (3.535 * ci + 2.181 * ci * ci) / (1.0 + 2.276 * ci + 2.577 * ci * ci);
-            } else {
-                return 1.0;
-            }
-        }
-    }
-
-    fn microfacet_distribution(roughness: f32, normal: &Vec3, halfway: &Vec3, ggx: bool) -> f32 {
-        // https://google.github.io/filament/Filament.html#materialsystem/specularbrdf
-        // http://graphicrants.blogspot.com/2013/08/specular-brdf-reference.html
-        let cosine = dot(normal, halfway);
-        if cosine <= 0.0 {
-            return 0.0;
-        }
-        let roughness2 = roughness * roughness;
-        let cosine2 = cosine * cosine;
-        if ggx {
-            return roughness2
-                / (PI
-                    * (cosine2 * roughness2 + 1.0 - cosine2)
-                    * (cosine2 * roughness2 + 1.0 - cosine2));
-        } else {
-            return f32::exp((cosine2 - 1.0) / (roughness2 * cosine2))
-                / (PI * roughness2 * cosine2 * cosine2);
-        }
-    }
-
-    fn same_hemisphere(normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> bool {
-        dot(normal, outgoing) * dot(normal, incoming) >= 0.0
-    }
-
-    fn sample_microfacet(roughness: f32, normal: &Vec3, rn: &Vec2, ggx: bool) -> Vec3 {
-        let phi = 2.0 * PI * rn.x;
-        let roughness2 = roughness * roughness;
-        let theta = if ggx {
-            f32::atan(roughness * f32::sqrt(rn.y / (1.0 - rn.y)))
-        } else {
-            f32::atan(f32::sqrt(-roughness2 * f32::ln(1.0 - rn.y)))
-        };
-        let local_half_vector = vec3(
-            f32::cos(phi) * f32::sin(theta),
-            f32::sin(phi) * f32::sin(theta),
-            f32::cos(theta),
-        );
-        transform_direction_mat(&basis_fromz(&normal), &local_half_vector)
-    }
-
-    fn sample_microfacet_pdf(roughness: f32, normal: &Vec3, halfway: &Vec3) -> f32 {
-        let cosine = dot(normal, halfway);
-        if cosine < 0.0 {
-            0.0
-        } else {
-            Self::microfacet_distribution(roughness, normal, halfway, true) * cosine
-        }
+            + (1.0 - F) * shading::sample_hemisphere_cos_pdf(&up_normal, incoming)
     }
 }
 
