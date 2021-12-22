@@ -50,6 +50,7 @@ impl MaterialPoint {
             MaterialType::Matte => self.sample_matte(normal, outgoing, rn),
             MaterialType::Glossy => self.sample_glossy(normal, outgoing, rnl, rn),
             MaterialType::Reflective => self.sample_reflective(normal, outgoing, rn),
+            MaterialType::Transparent => self.sample_transparent(normal, outgoing, rnl, rn),
             _ => Vec3::zeros(),
         }
     }
@@ -62,6 +63,7 @@ impl MaterialPoint {
             MaterialType::Matte => self.eval_matte(normal, outgoing, incoming),
             MaterialType::Glossy => self.eval_glossy(normal, outgoing, incoming),
             MaterialType::Reflective => self.eval_reflective(normal, outgoing, incoming),
+            MaterialType::Transparent => self.eval_transparent(normal, outgoing, incoming),
             _ => Vec3::zeros(),
         }
     }
@@ -74,6 +76,7 @@ impl MaterialPoint {
             MaterialType::Matte => self.sample_matte_pdf(normal, outgoing, incoming),
             MaterialType::Glossy => self.sample_glossy_pdf(normal, outgoing, incoming),
             MaterialType::Reflective => self.sample_reflective_pdf(normal, outgoing, incoming),
+            MaterialType::Transparent => self.sample_transparent_pdf(normal, outgoing, incoming),
             _ => 0.0,
         }
     }
@@ -84,6 +87,7 @@ impl MaterialPoint {
         }
         match self.m_type {
             MaterialType::Reflective => self.sample_reflective_delta(normal, outgoing),
+            MaterialType::Transparent => self.sample_transparent_delta(normal, outgoing, rnl),
             _ => Vec3::zeros(),
         }
     }
@@ -94,6 +98,7 @@ impl MaterialPoint {
         }
         match self.m_type {
             MaterialType::Reflective => self.eval_reflective_delta(normal, outgoing, incoming),
+            MaterialType::Transparent => self.eval_transparent_delta(normal, outgoing, incoming),
             _ => Vec3::zeros(),
         }
     }
@@ -105,6 +110,9 @@ impl MaterialPoint {
         match self.m_type {
             MaterialType::Reflective => {
                 self.sample_reflective_pdf_delta(normal, outgoing, incoming)
+            }
+            MaterialType::Transparent => {
+                self.sample_transparent_pdf_delta(normal, outgoing, incoming)
             }
             _ => 0.0,
         }
@@ -272,6 +280,117 @@ impl MaterialPoint {
             return 0.0;
         }
         1.0
+    }
+
+    fn sample_transparent(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32, rn: &Vec2) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let halfway = sample_microfacet(self.roughness, &up_normal, rn, true);
+        if rnl < fresnel_dielectric(self.ior, &halfway, outgoing) {
+            let incoming = glm::reflect_vec(&(-outgoing), &halfway);
+            if !same_hemisphere(&up_normal, outgoing, &incoming) {
+                return Vec3::zeros();
+            } else {
+                incoming
+            }
+        } else {
+            let reflected = glm::reflect_vec(&(-outgoing), &halfway);
+            let incoming = -glm::reflect_vec(&(-reflected), &up_normal);
+            if same_hemisphere(&up_normal, outgoing, &incoming) {
+                return Vec3::zeros();
+            } else {
+                incoming
+            }
+        }
+    }
+
+    fn sample_transparent_delta(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        if rnl < fresnel_dielectric(self.ior, &up_normal, outgoing) {
+            glm::reflect_vec(&(-outgoing), &up_normal)
+        } else {
+            -outgoing
+        }
+    }
+
+    fn eval_transparent(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            let halfway = normalize(&(incoming + outgoing));
+            let f = fresnel_dielectric(self.ior, &halfway, outgoing);
+            let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+            let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
+            vec3(1.0, 1.0, 1.0) * f * d * g
+                / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
+                * (dot(&up_normal, incoming).abs())
+        } else {
+            let reflected = glm::reflect_vec(incoming, &up_normal);
+            let halfway = normalize(&(reflected + outgoing));
+            let f = fresnel_dielectric(self.ior, &halfway, outgoing);
+            let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+            let g =
+                microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, &reflected);
+            self.color * (1.0 - f) * d * g
+                / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, &reflected))
+                * (dot(&up_normal, &reflected).abs())
+        }
+    }
+
+    fn eval_transparent_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            vec3(1.0, 1.0, 1.0) * fresnel_dielectric(self.ior, &up_normal, outgoing)
+        } else {
+            self.color * (1.0 - fresnel_dielectric(self.ior, &up_normal, outgoing))
+        }
+    }
+
+    fn sample_transparent_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            let halfway = normalize(&(incoming + outgoing));
+            fresnel_dielectric(self.ior, &halfway, outgoing)
+                * sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
+                / (4.0 * (dot(outgoing, &halfway).abs()))
+        } else {
+            let reflected = glm::reflect_vec(incoming, &up_normal);
+            let halfway = normalize(&(reflected + outgoing));
+            let d = (1.0 - fresnel_dielectric(self.ior, &halfway, outgoing))
+                * sample_microfacet_pdf(self.roughness, &up_normal, &halfway);
+            d / (4.0 * (dot(outgoing, &halfway).abs()))
+        }
+    }
+
+    fn sample_transparent_pdf_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            fresnel_dielectric(self.ior, &up_normal, outgoing)
+        } else {
+            1.0 - fresnel_dielectric(self.ior, &up_normal, outgoing)
+        }
     }
 }
 

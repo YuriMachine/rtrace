@@ -172,7 +172,7 @@ pub fn shade_raytrace(
         radiance += weight.component_mul(&material.eval_emission(&normal, &outgoing));
 
         // next direction
-        let mut incoming = Vec3::zeros();
+        let incoming;
         if material.roughness != 0.0 {
             incoming = material.sample_bsdfcos(&normal, &outgoing, rand1(rng), &rand2(rng));
             if is_null(&incoming, epsilon()) {

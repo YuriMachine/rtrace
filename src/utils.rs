@@ -26,7 +26,7 @@ impl Default for RaytraceParams {
             camera: 0,
             resolution: 720,
             shader: trace::shade_raytrace,
-            samples: 64,
+            samples: 256,
             bounces: 8,
             noparallel: false,
             pratio: 8,
