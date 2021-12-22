@@ -1,5 +1,6 @@
 use crate::{scene::Scene, trace::Ray};
 use glm::{vec2, Vec2};
+use nalgebra_glm::{vec4, Vec4};
 
 #[derive(Debug)]
 pub struct BvhIntersection {
@@ -48,18 +49,17 @@ impl BvhData<'_> {
                 }
             }
             if !shape.lines.is_empty() {
-                /*/
-                let mut elines: Vec<u32> = Vec::new();
+                let mut elines: Vec<i32> = Vec::new();
                 let mut epositions: Vec<Vec4> = Vec::new();
-                let mut last_index = usize::MAX;
+                let mut last_index = -1;
                 for l in &shape.lines {
                     if last_index == l.x {
-                        elines.push(epositions.len() as u32 - 1);
+                        elines.push(epositions.len() as i32 - 1);
                         let posy = &shape.positions[l.y as usize];
                         let rady = shape.radius[l.y as usize];
                         epositions.push(vec4(posy.x, posy.y, posy.z, rady));
                     } else {
-                        elines.push(epositions.len() as u32);
+                        elines.push(epositions.len() as i32);
                         let posx = &shape.positions[l.x as usize];
                         let radx = shape.radius[l.x as usize];
                         epositions.push(vec4(posx.x, posx.y, posx.z, radx));
@@ -69,16 +69,42 @@ impl BvhData<'_> {
                     }
                     last_index = l.y;
                 }
-                */
-                /*
-                let mut flat = embree::LinearCurve::flat(&device, 0, 1, false);
-                let mut verts = flat.vertex_buffer.map();
-                //verts.
-                let mut idx = flat.index_buffer.map();
+                unsafe {
+                    use embree::sys::*;
+                    use embree::*;
+                    let egeometry = rtcNewGeometry(device.handle, GeometryType::FLAT_LINEAR_CURVE);
+                    rtcSetGeometryVertexAttributeCount(egeometry, 1);
 
-                let mut geometry = embree::Geometry::LinearCurve(flat);
-                geometry.commit();
-                */
+                    let embree_positions = rtcSetNewGeometryBuffer(
+                        egeometry,
+                        BufferType::VERTEX,
+                        0,
+                        Format::FLOAT4,
+                        4 * 4,
+                        epositions.len(),
+                    );
+                    let embree_lines = rtcSetNewGeometryBuffer(
+                        egeometry,
+                        BufferType::INDEX,
+                        0,
+                        Format::UINT,
+                        4,
+                        elines.len(),
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        epositions.as_ptr() as *mut std::ffi::c_void,
+                        embree_positions,
+                        epositions.len() * 16,
+                    );
+                    std::ptr::copy_nonoverlapping(
+                        elines.as_ptr() as *mut std::ffi::c_void,
+                        embree_lines,
+                        elines.len() * 4,
+                    );
+                    rtcCommitGeometry(egeometry);
+                    rtcAttachGeometryByID(escene.handle(), egeometry, 0);
+                    rtcReleaseGeometry(egeometry);
+                }
             } else if !shape.triangles.is_empty() {
                 unsafe {
                     use embree::sys::*;
