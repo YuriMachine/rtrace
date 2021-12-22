@@ -20,6 +20,29 @@ pub struct RaytraceParams {
     pub clamp: f32,
 }
 
+impl RaytraceParams {
+    pub fn from_args(args: &clap::ArgMatches<'_>) -> Self {
+        let shader_name = args.value_of("shader").unwrap();
+        let shader = match shader_name {
+            "color" => trace::shade_color,
+            "eyelight" => trace::shade_eyelight,
+            "normals" => trace::shade_normals,
+            "position" => trace::shade_position,
+            "raytrace" => trace::shade_raytrace,
+            _ => trace::shade_raytrace,
+        };
+        RaytraceParams {
+            resolution: clap::value_t!(args.value_of("resolution"), usize).unwrap(),
+            samples: clap::value_t!(args.value_of("samples"), i32).unwrap(),
+            bounces: clap::value_t!(args.value_of("bounces"), i32).unwrap(),
+            clamp: clap::value_t!(args.value_of("clamp"), f32).unwrap(),
+            noparallel: clap::value_t!(args.value_of("noparallel"), bool).unwrap(),
+            shader,
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for RaytraceParams {
     fn default() -> Self {
         RaytraceParams {
