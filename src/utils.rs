@@ -79,8 +79,8 @@ impl RaytraceState {
             )
         } else {
             (
-                params.resolution,
                 (params.resolution as f32 * camera.aspect).round() as usize,
+                params.resolution,
             )
         };
         let samples = 0;
