@@ -1,5 +1,5 @@
 use crate::scene_components::MaterialType;
-use crate::utils::*;
+use crate::{one3, utils::*, zero3};
 use glm::{dot, normalize, vec3};
 use glm::{Vec2, Vec3};
 use std::f32::consts::PI;
@@ -22,13 +22,13 @@ impl Default for MaterialPoint {
     fn default() -> Self {
         MaterialPoint {
             m_type: MaterialType::Matte,
-            emission: Vec3::zeros(),
-            color: Vec3::zeros(),
+            emission: zero3!(),
+            color: zero3!(),
             roughness: 0.0,
             metallic: 0.0,
             ior: 1.0,
-            density: Vec3::zeros(),
-            scattering: Vec3::zeros(),
+            density: zero3!(),
+            scattering: zero3!(),
             scanisotropy: 0.0,
             trdepth: 0.01,
             opacity: 1.0,
@@ -41,7 +41,7 @@ impl MaterialPoint {
         if dot(normal, outgoing) >= 0.0 {
             self.emission
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -53,13 +53,13 @@ impl MaterialPoint {
             MaterialType::Transparent => self.sample_transparent(normal, outgoing, rnl, rn),
             MaterialType::Refractive => self.sample_refractive(normal, outgoing, rnl, rn),
             MaterialType::Subsurface => self.sample_refractive(normal, outgoing, rnl, rn),
-            _ => Vec3::zeros(),
+            _ => zero3!(),
         }
     }
 
     pub fn eval_bsdfcos(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if self.roughness == 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         match self.m_type {
             MaterialType::Matte => self.eval_matte(normal, outgoing, incoming),
@@ -68,7 +68,7 @@ impl MaterialPoint {
             MaterialType::Transparent => self.eval_transparent(normal, outgoing, incoming),
             MaterialType::Refractive => self.eval_refractive(normal, outgoing, incoming),
             MaterialType::Subsurface => self.eval_refractive(normal, outgoing, incoming),
-            _ => Vec3::zeros(),
+            _ => zero3!(),
         }
     }
 
@@ -89,25 +89,25 @@ impl MaterialPoint {
 
     pub fn sample_delta(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32) -> Vec3 {
         if self.roughness != 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         match self.m_type {
             MaterialType::Reflective => self.sample_reflective_delta(normal, outgoing),
             MaterialType::Transparent => self.sample_transparent_delta(normal, outgoing, rnl),
             MaterialType::Refractive => self.sample_refractive_delta(normal, outgoing, rnl),
-            _ => Vec3::zeros(),
+            _ => zero3!(),
         }
     }
 
     pub fn eval_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if self.roughness != 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         match self.m_type {
             MaterialType::Reflective => self.eval_reflective_delta(normal, outgoing, incoming),
             MaterialType::Transparent => self.eval_transparent_delta(normal, outgoing, incoming),
             MaterialType::Refractive => self.eval_refractive_delta(normal, outgoing, incoming),
-            _ => Vec3::zeros(),
+            _ => zero3!(),
         }
     }
 
@@ -140,7 +140,7 @@ impl MaterialPoint {
 
     fn eval_matte(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         self.color / PI * f32::abs(dot(normal, incoming))
     }
@@ -167,7 +167,7 @@ impl MaterialPoint {
             let halfway = sample_microfacet(self.roughness, &up_normal, rn, true);
             let incoming = glm::reflect_vec(&(-outgoing), &halfway);
             if !same_hemisphere(&up_normal, outgoing, &incoming) {
-                Vec3::zeros()
+                zero3!()
             } else {
                 incoming
             }
@@ -178,7 +178,7 @@ impl MaterialPoint {
 
     fn eval_glossy(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         let up_normal = if dot(normal, outgoing) <= 0.0 {
             -normal
@@ -191,8 +191,7 @@ impl MaterialPoint {
         let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
         let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
         self.color * (1.0 - f1) / PI * f32::abs(dot(&up_normal, incoming))
-            + vec3(1.0, 1.0, 1.0) * f * d * g
-                / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
+            + one3!() * f * d * g / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
                 * f32::abs(dot(&up_normal, incoming))
     }
 
@@ -218,7 +217,7 @@ impl MaterialPoint {
         let halfway = sample_microfacet(self.roughness, &up_normal, rn, true);
         let incoming = glm::reflect_vec(&(-outgoing), &halfway);
         if !same_hemisphere(&up_normal, outgoing, &incoming) {
-            Vec3::zeros()
+            zero3!()
         } else {
             incoming
         }
@@ -235,7 +234,7 @@ impl MaterialPoint {
 
     fn eval_reflective(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         let up_normal = if dot(normal, outgoing) <= 0.0 {
             -normal
@@ -245,7 +244,7 @@ impl MaterialPoint {
         let halfway = normalize(&(incoming + outgoing));
         let f = fresnel_conductor(
             &reflectivity_to_eta(&self.color),
-            &Vec3::zeros(),
+            &zero3!(),
             &halfway,
             incoming,
         );
@@ -257,7 +256,7 @@ impl MaterialPoint {
 
     fn eval_reflective_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
-            return Vec3::zeros();
+            return zero3!();
         }
         let up_normal = if dot(normal, outgoing) <= 0.0 {
             -normal
@@ -266,7 +265,7 @@ impl MaterialPoint {
         };
         fresnel_conductor(
             &reflectivity_to_eta(&self.color),
-            &Vec3::zeros(),
+            &zero3!(),
             &up_normal,
             outgoing,
         )
@@ -303,7 +302,7 @@ impl MaterialPoint {
         if rnl < fresnel_dielectric(self.ior, &halfway, outgoing) {
             let incoming = glm::reflect_vec(&(-outgoing), &halfway);
             if !same_hemisphere(&up_normal, outgoing, &incoming) {
-                return Vec3::zeros();
+                return zero3!();
             } else {
                 incoming
             }
@@ -311,7 +310,7 @@ impl MaterialPoint {
             let reflected = glm::reflect_vec(&(-outgoing), &halfway);
             let incoming = -glm::reflect_vec(&(-reflected), &up_normal);
             if same_hemisphere(&up_normal, outgoing, &incoming) {
-                return Vec3::zeros();
+                return zero3!();
             } else {
                 incoming
             }
@@ -342,8 +341,7 @@ impl MaterialPoint {
             let f = fresnel_dielectric(self.ior, &halfway, outgoing);
             let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
             let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
-            vec3(1.0, 1.0, 1.0) * f * d * g
-                / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
+            one3!() * f * d * g / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
                 * f32::abs(dot(&up_normal, incoming))
         } else {
             let reflected = glm::reflect_vec(incoming, &up_normal);
@@ -365,7 +363,7 @@ impl MaterialPoint {
             *normal
         };
         if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
-            vec3(1.0, 1.0, 1.0) * fresnel_dielectric(self.ior, &up_normal, outgoing)
+            one3!() * fresnel_dielectric(self.ior, &up_normal, outgoing)
         } else {
             self.color * (1.0 - fresnel_dielectric(self.ior, &up_normal, outgoing))
         }
@@ -416,14 +414,14 @@ impl MaterialPoint {
         if rnl < fresnel_dielectric(rel_ior, &halfway, outgoing) {
             let incoming = glm::reflect_vec(&(-outgoing), &halfway);
             if !same_hemisphere(&up_normal, outgoing, &incoming) {
-                Vec3::zeros()
+                zero3!()
             } else {
                 incoming
             }
         } else {
             let incoming = glm::refract_vec(&(-outgoing), &halfway, rel_ior);
             if !same_hemisphere(&up_normal, outgoing, &incoming) {
-                Vec3::zeros()
+                zero3!()
             } else {
                 incoming
             }
@@ -461,8 +459,7 @@ impl MaterialPoint {
             let f = fresnel_dielectric(rel_ior, &halfway, outgoing);
             let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
             let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
-            vec3(1.0, 1.0, 1.0) * f * d * g
-                / f32::abs(4.0 * dot(normal, outgoing) * dot(normal, incoming))
+            one3!() * f * d * g / f32::abs(4.0 * dot(normal, outgoing) * dot(normal, incoming))
                 * f32::abs(dot(normal, incoming))
         } else {
             let rel_sign = if entering { 1.0 } else { -1.0 };
@@ -471,7 +468,7 @@ impl MaterialPoint {
             let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
             let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
             // [Walter 2007] equation 21
-            vec3(1.0, 1.0, 1.0)
+            one3!()
                 * f32::abs(
                     (dot(outgoing, &halfway) * dot(incoming, &halfway))
                         / (dot(outgoing, normal) * dot(incoming, normal)),
@@ -490,9 +487,9 @@ impl MaterialPoint {
     fn eval_refractive_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
         if f32::abs(self.ior - 1.0) < 1e-3 {
             if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
-                return vec3(1.0, 1.0, 1.0);
+                return one3!();
             } else {
-                return Vec3::zeros();
+                return zero3!();
             }
         }
         let entering = dot(normal, outgoing) >= 0.0;
@@ -503,9 +500,9 @@ impl MaterialPoint {
         };
         let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
         if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
-            vec3(1.0, 1.0, 1.0) * fresnel_dielectric(rel_ior, &up_normal, outgoing)
+            one3!() * fresnel_dielectric(rel_ior, &up_normal, outgoing)
         } else {
-            vec3(1.0, 1.0, 1.0)
+            one3!()
                 * (1.0 / (rel_ior * rel_ior))
                 * (1.0 - fresnel_dielectric(rel_ior, &up_normal, outgoing))
         }
@@ -562,8 +559,7 @@ impl MaterialPoint {
 
 fn reflectivity_to_eta(reflectivity: &Vec3) -> Vec3 {
     let r_clamp = glm::clamp(reflectivity, 0.0, 0.99);
-    return (vec3(1.0, 1.0, 1.0) + glm::sqrt(&r_clamp))
-        .component_div(&(vec3(1.0, 1.0, 1.0) - glm::sqrt(&r_clamp)));
+    return (one3!() + glm::sqrt(&r_clamp)).component_div(&(one3!() - glm::sqrt(&r_clamp)));
 }
 
 fn sample_hemisphere_cos(normal: &Vec3, rn: &Vec2) -> Vec3 {
@@ -611,7 +607,7 @@ fn fresnel_conductor(eta: &Vec3, etak: &Vec3, normal: &Vec3, outgoing: &Vec3) ->
     // https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
     let mut cosw = dot(normal, outgoing);
     if cosw <= 0.0 {
-        return Vec3::zeros();
+        return zero3!();
     }
 
     cosw = cosw.clamp(-1.0, 1.0);

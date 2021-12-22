@@ -1,6 +1,6 @@
 use crate::bvh::BvhIntersection;
 use crate::trace::Ray;
-use crate::utils::*;
+use crate::{one4, utils::*, zero3};
 use glm::{mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
 use glm::{Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
 use serde::Deserialize;
@@ -127,12 +127,12 @@ impl Default for Material {
     fn default() -> Self {
         Material {
             m_type: MaterialType::Matte,
-            emission: Vec3::zeros(),
-            color: Vec3::zeros(),
+            emission: zero3!(),
+            color: zero3!(),
             roughness: 0.0,
             metallic: 0.0,
             ior: 1.5,
-            scattering: Vec3::zeros(),
+            scattering: zero3!(),
             scanisotropy: 0.0,
             trdepth: 0.01,
             opacity: 1.0,
@@ -175,7 +175,7 @@ impl Texture {
                 color[3] as f32 / 255.0,
             )
         } else {
-            vec4(1.0, 1.0, 1.0, 1.0)
+            one4!()
         };
         if as_linear && !self.linear {
             srgb_to_rgb(color)
@@ -215,7 +215,7 @@ impl Default for Environment {
     fn default() -> Self {
         Environment {
             frame: mat3x4(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0),
-            emission: Vec3::zeros(),
+            emission: zero3!(),
             emission_tex: INVALID,
         }
     }
@@ -271,7 +271,7 @@ impl Shape {
             let point = self.points[element];
             self.positions[point as usize]
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -311,7 +311,7 @@ impl Shape {
         } else if self.points.is_empty() {
             vec3(0.0, 0.0, 1.0)
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 }

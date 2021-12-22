@@ -1,11 +1,46 @@
 use std::f32::consts::PI;
 
 use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
-use glm::{inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4, Mat3};
-use glm::{Mat3x4, Vec2, Vec3, Vec4};
+use glm::{dot, inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4};
+use glm::{Mat3, Mat3x4, Vec2, Vec3, Vec4};
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+
+#[macro_export]
+macro_rules! zero2 {
+    () => {
+        Vec2::zeros()
+    };
+}
+
+#[macro_export]
+macro_rules! zero3 {
+    () => {
+        Vec3::zeros()
+    };
+}
+
+#[macro_export]
+macro_rules! zero4 {
+    () => {
+        Vec4::zeros()
+    };
+}
+
+#[macro_export]
+macro_rules! one3 {
+    () => {
+        vec3(1.0, 1.0, 1.0)
+    };
+}
+
+#[macro_export]
+macro_rules! one4 {
+    () => {
+        vec4(1.0, 1.0, 1.0, 1.0)
+    };
+}
 
 pub struct RaytraceParams {
     pub camera: usize,
@@ -84,7 +119,7 @@ impl RaytraceState {
             )
         };
         let samples = 0;
-        let image = vec![vec4(0.0, 0.0, 0.0, 0.0); width * height];
+        let image = vec![zero4!(); width * height];
 
         let rngs: Vec<Mutex<SmallRng>> = (0..width * height)
             .map(|_| Mutex::new(SmallRng::from_entropy()))
@@ -100,27 +135,33 @@ impl RaytraceState {
     }
 }
 
+#[inline(always)]
 pub fn rand1(rng: &Mutex<SmallRng>) -> f32 {
     rng.lock().gen::<f32>()
 }
 
+#[inline(always)]
 pub fn rand2(rng: &Mutex<SmallRng>) -> Vec2 {
     let (rng_x, rng_y) = rng.lock().gen::<(f32, f32)>();
     vec2(rng_x, rng_y)
 }
 
+#[inline(always)]
 pub fn transform_point(a: &Mat3x4, b: &Vec3) -> Vec3 {
     a.column(0) * b.x + a.column(1) * b.y + a.column(2) * b.z + a.column(3)
 }
 
+#[inline(always)]
 pub fn transform_vector_frame(a: &Mat3x4, b: &Vec3) -> Vec3 {
     a.column(0) * b.x + a.column(1) * b.y + a.column(2) * b.z
 }
 
+#[inline(always)]
 pub fn transform_direction_frame(a: &Mat3x4, b: &Vec3) -> Vec3 {
     normalize(&transform_vector_frame(a, b))
 }
 
+#[inline(always)]
 pub fn transform_normal_frame(a: &Mat3x4, b: &Vec3, non_rigid: bool) -> Vec3 {
     if non_rigid {
         let a_rotation = &transpose(&inverse(&mat3x3(
@@ -133,14 +174,17 @@ pub fn transform_normal_frame(a: &Mat3x4, b: &Vec3, non_rigid: bool) -> Vec3 {
     }
 }
 
+#[inline(always)]
 pub fn transform_vector_mat(a: &Mat3, b: &Vec3) -> Vec3 {
     a * b
 }
 
+#[inline(always)]
 pub fn transform_direction_mat(a: &Mat3, b: &Vec3) -> Vec3 {
     normalize(&transform_vector_mat(a, b))
 }
 
+#[inline(always)]
 pub fn interpolate_line<'a, T: 'a>(p0: &'a T, p1: &'a T, u: f32) -> T
 where
     &'a T: std::ops::Mul<f32, Output = T> + std::ops::Add<Output = T>,
@@ -149,6 +193,7 @@ where
     p0 * (1.0 - u) + p1 * u
 }
 
+#[inline(always)]
 pub fn interpolate_triangle<'a, T: 'a>(p0: &'a T, p1: &'a T, p2: &'a T, uv: &Vec2) -> T
 where
     &'a T: std::ops::Mul<f32, Output = T> + std::ops::Add<Output = T>,
@@ -157,6 +202,7 @@ where
     p0 * (1.0 - uv.x - uv.y) + p1 * uv.x + p2 * uv.y
 }
 
+#[inline(always)]
 pub fn interpolate_quad<'a, T: 'a>(p0: &'a T, p1: &'a T, p2: &'a T, p3: &'a T, uv: &Vec2) -> T
 where
     &'a T: std::ops::Mul<f32, Output = T> + std::ops::Add<Output = T>,
@@ -169,10 +215,12 @@ where
     }
 }
 
+#[inline(always)]
 pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
-    (a - b * a.dot(b)).normalize()
+    normalize(&(a - b * dot(a, b)))
 }
 
+#[inline(always)]
 pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
     let rotation = make_mat3(
         &[
@@ -207,6 +255,7 @@ pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
     }
 }
 
+#[inline(always)]
 pub fn basis_fromz(normal: &Vec3) -> Mat3 {
     let z = normalize(normal);
     let sign = 1.0_f32.copysign(z.z);
@@ -218,16 +267,19 @@ pub fn basis_fromz(normal: &Vec3) -> Mat3 {
     make_mat3(&[x.as_slice(), y.as_slice(), z.as_slice()].concat())
 }
 
+#[inline(always)]
 pub fn sample_disk(ruv: Vec2) -> Vec2 {
     let r = f32::sqrt(ruv.y);
     let phi = 2.0 * PI * ruv.x;
     vec2(f32::cos(phi) * r, f32::sin(phi) * r)
 }
 
+#[inline(always)]
 pub fn to_srgb(component: f32, gamma: f32) -> u8 {
     (component.max(0.0).min(1.0).powf(1.0 / gamma) * 255.0) as u8
 }
 
+#[inline(always)]
 pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
     let compute_srgb = |srgb: f32| -> f32 {
         if srgb <= 0.04045 {
@@ -244,6 +296,7 @@ pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
     )
 }
 
+#[inline(always)]
 pub fn is_finite(weight: &Vec3) -> bool {
     f32::is_finite(weight.x) && f32::is_finite(weight.y) && f32::is_finite(weight.z)
 }

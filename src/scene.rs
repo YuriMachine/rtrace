@@ -1,7 +1,7 @@
 use crate::bvh::BvhIntersection;
-use crate::scene_components::*;
 use crate::shading::MaterialPoint;
-use crate::utils::*;
+use crate::{one4, scene_components::*, zero3, zero4};
+use crate::{utils::*, zero2};
 use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, TVec2, Vec2};
 use glm::{Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
@@ -38,7 +38,7 @@ impl Scene {
         } else if !shape.points.is_empty() {
             shape.eval_position(intersection)
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -82,7 +82,7 @@ impl Scene {
             let point = shape.points[element];
             transform_point(&instance.frame, &shape.positions[point as usize])
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -120,7 +120,7 @@ impl Scene {
                 outgoing.clone()
             }
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -176,7 +176,7 @@ impl Scene {
                 false,
             )
         } else {
-            Vec3::zeros()
+            zero3!()
         }
     }
 
@@ -208,7 +208,7 @@ impl Scene {
         let shape = &self.shapes[instance.shape];
         let element = intersection.element;
         if shape.colors.is_empty() {
-            return vec4(1.0, 1.0, 1.0, 1.0);
+            return one4!();
         }
         if !shape.triangles.is_empty() {
             let t = shape.triangles[element];
@@ -237,12 +237,12 @@ impl Scene {
         } else if !shape.points.is_empty() {
             shape.colors[shape.points[element as usize] as usize]
         } else {
-            Vec4::zeros()
+            zero4!()
         }
     }
 
     pub fn eval_environment(&self, direction: Vec3) -> Vec3 {
-        let mut emission = vec3(0.0, 0.0, 0.0);
+        let mut emission = zero3!();
         for environment in &self.environments {
             let wl =
                 transform_direction_frame(&inverse_frame(&environment.frame, false), &direction);
@@ -271,11 +271,11 @@ impl Scene {
         clamp_to_edge: bool,
     ) -> Vec4 {
         if texture_idx == INVALID {
-            return vec4(1.0, 1.0, 1.0, 1.0);
+            return one4!();
         }
         let texture = &self.textures[texture_idx];
         if texture.width == 0 || texture.height == 0 {
-            return Vec4::zeros();
+            return zero4!();
         }
         // get coordinates normalized for tiling
         let (s, t) = if clamp_to_edge {
@@ -354,7 +354,7 @@ impl Scene {
         {
             -log(&clamp(&color, 0.0001, 1.0)) / trdepth
         } else {
-            Vec3::zeros()
+            zero3!()
         };
 
         // fix roughness
@@ -420,7 +420,7 @@ impl Scene {
         } else if !shape.points.is_empty() {
             return shape.texcoords[shape.points[element as usize] as usize];
         } else {
-            return Vec2::zeros();
+            return zero2!();
         }
     }
 
