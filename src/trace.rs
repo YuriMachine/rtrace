@@ -1,9 +1,6 @@
 use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
-use crate::{
-    scene::*,
-    utils::{rand2, RaytraceParams, RaytraceState},
-};
+use crate::{scene::*, utils::*};
 use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
 use glm::{Vec3, Vec4};
 use parking_lot::Mutex;
@@ -148,6 +145,7 @@ pub fn shade_raytrace(
     let mut radiance = vec3(0.0, 0.0, 0.0);
     let mut weight = vec3(1.0, 1.0, 1.0);
     let mut bounce = 0;
+    let mut hit_alpha = 0.0;
     while bounce < params.bounces {
         let intersection = bvh.intersect(ray);
         if !intersection.hit {
@@ -166,6 +164,9 @@ pub fn shade_raytrace(
             ray.origin = position + ray.direction * 1e-2;
             bounce -= 1;
             continue;
+        }
+        if bounce == 0 {
+            hit_alpha = 1.0;
         }
 
         // accumulate emission
@@ -192,7 +193,7 @@ pub fn shade_raytrace(
         }
 
         // check weight
-        if is_null(&weight, epsilon()) {
+        if is_null(&weight, epsilon()) || !is_finite(&weight) {
             break;
         }
 
@@ -210,5 +211,5 @@ pub fn shade_raytrace(
         ray.origin = position;
         ray.direction = incoming;
     }
-    vec3_to_vec4(&radiance)
+    vec4(radiance.x, radiance.y, radiance.z, hit_alpha)
 }

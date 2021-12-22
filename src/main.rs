@@ -90,6 +90,13 @@ pub fn main() {
     let mut state = RaytraceState::from_scene(&scene, &params);
     println!("Rendering...");
     let samples_bar = ProgressBar::new(params.samples as u64);
+    samples_bar.set_style(
+        indicatif::ProgressStyle::default_bar()
+            .template(
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+            )
+            .progress_chars("#>-"),
+    );
     for _ in 0..params.samples {
         raytrace_samples(&mut state, &params, &scene, &bvh);
         samples_bar.inc(1);

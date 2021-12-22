@@ -26,7 +26,7 @@ impl RaytraceParams {
         let shader = match shader_name {
             "color" => trace::shade_color,
             "eyelight" => trace::shade_eyelight,
-            "normals" => trace::shade_normals,
+            "normal" => trace::shade_normals,
             "position" => trace::shade_position,
             "raytrace" => trace::shade_raytrace,
             _ => trace::shade_raytrace,
@@ -170,7 +170,7 @@ where
 }
 
 pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
-    ((a - b) * a.dot(b)).normalize()
+    (a - b * a.dot(b)).normalize()
 }
 
 pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
@@ -242,4 +242,8 @@ pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
         compute_srgb(color.z),
         compute_srgb(color.w),
     )
+}
+
+pub fn is_finite(weight: &Vec3) -> bool {
+    f32::is_finite(weight.x) && f32::is_finite(weight.y) && f32::is_finite(weight.z)
 }
