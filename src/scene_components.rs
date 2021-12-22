@@ -54,7 +54,7 @@ impl Camera {
                 0.0,
             );
             // point on the focus plane
-            let p = dc * self.focus / dc.z.abs();
+            let p = dc * self.focus / f32::abs(dc.z);
             // correct ray direction to account for camera focusing
             let d = normalize(&(p - e));
             Ray {

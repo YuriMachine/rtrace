@@ -51,6 +51,8 @@ impl MaterialPoint {
             MaterialType::Glossy => self.sample_glossy(normal, outgoing, rnl, rn),
             MaterialType::Reflective => self.sample_reflective(normal, outgoing, rn),
             MaterialType::Transparent => self.sample_transparent(normal, outgoing, rnl, rn),
+            MaterialType::Refractive => self.sample_refractive(normal, outgoing, rnl, rn),
+            MaterialType::Subsurface => self.sample_refractive(normal, outgoing, rnl, rn),
             _ => Vec3::zeros(),
         }
     }
@@ -64,6 +66,8 @@ impl MaterialPoint {
             MaterialType::Glossy => self.eval_glossy(normal, outgoing, incoming),
             MaterialType::Reflective => self.eval_reflective(normal, outgoing, incoming),
             MaterialType::Transparent => self.eval_transparent(normal, outgoing, incoming),
+            MaterialType::Refractive => self.eval_refractive(normal, outgoing, incoming),
+            MaterialType::Subsurface => self.eval_refractive(normal, outgoing, incoming),
             _ => Vec3::zeros(),
         }
     }
@@ -77,6 +81,8 @@ impl MaterialPoint {
             MaterialType::Glossy => self.sample_glossy_pdf(normal, outgoing, incoming),
             MaterialType::Reflective => self.sample_reflective_pdf(normal, outgoing, incoming),
             MaterialType::Transparent => self.sample_transparent_pdf(normal, outgoing, incoming),
+            MaterialType::Refractive => self.sample_refractive_pdf(normal, outgoing, incoming),
+            MaterialType::Subsurface => self.sample_refractive_pdf(normal, outgoing, incoming),
             _ => 0.0,
         }
     }
@@ -88,6 +94,7 @@ impl MaterialPoint {
         match self.m_type {
             MaterialType::Reflective => self.sample_reflective_delta(normal, outgoing),
             MaterialType::Transparent => self.sample_transparent_delta(normal, outgoing, rnl),
+            MaterialType::Refractive => self.sample_refractive_delta(normal, outgoing, rnl),
             _ => Vec3::zeros(),
         }
     }
@@ -99,6 +106,7 @@ impl MaterialPoint {
         match self.m_type {
             MaterialType::Reflective => self.eval_reflective_delta(normal, outgoing, incoming),
             MaterialType::Transparent => self.eval_transparent_delta(normal, outgoing, incoming),
+            MaterialType::Refractive => self.eval_refractive_delta(normal, outgoing, incoming),
             _ => Vec3::zeros(),
         }
     }
@@ -113,6 +121,9 @@ impl MaterialPoint {
             }
             MaterialType::Transparent => {
                 self.sample_transparent_pdf_delta(normal, outgoing, incoming)
+            }
+            MaterialType::Refractive => {
+                self.sample_refractive_pdf_delta(normal, outgoing, incoming)
             }
             _ => 0.0,
         }
@@ -131,7 +142,7 @@ impl MaterialPoint {
         if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
             return Vec3::zeros();
         }
-        self.color / PI * dot(normal, incoming).abs()
+        self.color / PI * f32::abs(dot(normal, incoming))
     }
 
     fn sample_matte_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
@@ -179,10 +190,10 @@ impl MaterialPoint {
         let f = fresnel_dielectric(self.ior, &halfway, incoming);
         let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
         let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
-        self.color * (1.0 - f1) / PI * (dot(&up_normal, incoming).abs())
+        self.color * (1.0 - f1) / PI * f32::abs(dot(&up_normal, incoming))
             + vec3(1.0, 1.0, 1.0) * f * d * g
                 / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
-                * (dot(&up_normal, incoming).abs())
+                * f32::abs(dot(&up_normal, incoming))
     }
 
     fn sample_glossy_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
@@ -194,7 +205,7 @@ impl MaterialPoint {
         let halfway = normalize(&(outgoing + incoming));
         let f = fresnel_dielectric(self.ior, &up_normal, outgoing);
         f * sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
-            / (4.0 * (dot(outgoing, &halfway).abs()))
+            / (4.0 * f32::abs(dot(outgoing, &halfway)))
             + (1.0 - f) * sample_hemisphere_cos_pdf(&up_normal, incoming)
     }
 
@@ -241,7 +252,7 @@ impl MaterialPoint {
         let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
         let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
         f * d * g / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
-            * (dot(&up_normal, incoming).abs())
+            * f32::abs(dot(&up_normal, incoming))
     }
 
     fn eval_reflective_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
@@ -272,7 +283,7 @@ impl MaterialPoint {
         };
         let halfway = normalize(&(outgoing + incoming));
         return sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
-            / (4.0 * (dot(outgoing, &halfway).abs()));
+            / (4.0 * f32::abs(dot(outgoing, &halfway)));
     }
 
     fn sample_reflective_pdf_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
@@ -333,7 +344,7 @@ impl MaterialPoint {
             let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
             vec3(1.0, 1.0, 1.0) * f * d * g
                 / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
-                * (dot(&up_normal, incoming).abs())
+                * f32::abs(dot(&up_normal, incoming))
         } else {
             let reflected = glm::reflect_vec(incoming, &up_normal);
             let halfway = normalize(&(reflected + outgoing));
@@ -343,7 +354,7 @@ impl MaterialPoint {
                 microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, &reflected);
             self.color * (1.0 - f) * d * g
                 / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, &reflected))
-                * (dot(&up_normal, &reflected).abs())
+                * f32::abs(dot(&up_normal, &reflected))
         }
     }
 
@@ -370,13 +381,13 @@ impl MaterialPoint {
             let halfway = normalize(&(incoming + outgoing));
             fresnel_dielectric(self.ior, &halfway, outgoing)
                 * sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
-                / (4.0 * (dot(outgoing, &halfway).abs()))
+                / (4.0 * f32::abs(dot(outgoing, &halfway)))
         } else {
             let reflected = glm::reflect_vec(incoming, &up_normal);
             let halfway = normalize(&(reflected + outgoing));
             let d = (1.0 - fresnel_dielectric(self.ior, &halfway, outgoing))
                 * sample_microfacet_pdf(self.roughness, &up_normal, &halfway);
-            d / (4.0 * (dot(outgoing, &halfway).abs()))
+            d / (4.0 * f32::abs(dot(outgoing, &halfway)))
         }
     }
 
@@ -390,6 +401,161 @@ impl MaterialPoint {
             fresnel_dielectric(self.ior, &up_normal, outgoing)
         } else {
             1.0 - fresnel_dielectric(self.ior, &up_normal, outgoing)
+        }
+    }
+
+    fn sample_refractive(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32, rn: &Vec2) -> Vec3 {
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let halfway = sample_microfacet(self.roughness, &up_normal, rn, true);
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if rnl < fresnel_dielectric(rel_ior, &halfway, outgoing) {
+            let incoming = glm::reflect_vec(&(-outgoing), &halfway);
+            if !same_hemisphere(&up_normal, outgoing, &incoming) {
+                Vec3::zeros()
+            } else {
+                incoming
+            }
+        } else {
+            let incoming = glm::refract_vec(&(-outgoing), &halfway, rel_ior);
+            if !same_hemisphere(&up_normal, outgoing, &incoming) {
+                Vec3::zeros()
+            } else {
+                incoming
+            }
+        }
+    }
+
+    fn sample_refractive_delta(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32) -> Vec3 {
+        if f32::abs(self.ior - 1.0) < 1e-3 {
+            return -outgoing;
+        }
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if rnl < fresnel_dielectric(rel_ior, &up_normal, outgoing) {
+            glm::reflect_vec(&(-outgoing), &up_normal)
+        } else {
+            glm::refract_vec(&(-outgoing), &up_normal, 1.0 / rel_ior)
+        }
+    }
+
+    fn eval_refractive(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            let halfway = normalize(&(incoming + outgoing));
+            let f = fresnel_dielectric(rel_ior, &halfway, outgoing);
+            let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+            let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
+            vec3(1.0, 1.0, 1.0) * f * d * g
+                / f32::abs(4.0 * dot(normal, outgoing) * dot(normal, incoming))
+                * f32::abs(dot(normal, incoming))
+        } else {
+            let rel_sign = if entering { 1.0 } else { -1.0 };
+            let halfway = -normalize(&(rel_ior * incoming + outgoing)) * rel_sign;
+            let f = fresnel_dielectric(rel_ior, &halfway, outgoing);
+            let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+            let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
+            // [Walter 2007] equation 21
+            vec3(1.0, 1.0, 1.0)
+                * f32::abs(
+                    (dot(outgoing, &halfway) * dot(incoming, &halfway))
+                        / (dot(outgoing, normal) * dot(incoming, normal)),
+                )
+                * (1.0 - f)
+                * d
+                * g
+                / f32::powf(
+                    rel_ior * dot(&halfway, incoming) + dot(&halfway, outgoing),
+                    2.0,
+                )
+                * f32::abs(dot(normal, incoming))
+        }
+    }
+
+    fn eval_refractive_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        if f32::abs(self.ior - 1.0) < 1e-3 {
+            if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+                return vec3(1.0, 1.0, 1.0);
+            } else {
+                return Vec3::zeros();
+            }
+        }
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            vec3(1.0, 1.0, 1.0) * fresnel_dielectric(rel_ior, &up_normal, outgoing)
+        } else {
+            vec3(1.0, 1.0, 1.0)
+                * (1.0 / (rel_ior * rel_ior))
+                * (1.0 - fresnel_dielectric(rel_ior, &up_normal, outgoing))
+        }
+    }
+
+    fn sample_refractive_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            let halfway = normalize(&(incoming + outgoing));
+            fresnel_dielectric(rel_ior, &halfway, outgoing) *
+                   sample_microfacet_pdf(self.roughness, &up_normal, &halfway) /
+                   //  sample_microfacet_pdf(roughness, up_normal, halfway, outgoing) /
+                   (4.0 * f32::abs(dot(outgoing, &halfway)))
+        } else {
+            let rel_sign = if entering { 1.0 } else { -1.0 };
+            let halfway = -normalize(&(rel_ior * incoming + outgoing)) * rel_sign;
+            // [Walter 2007] equation 17
+            (1.0 - fresnel_dielectric(rel_ior, &halfway, outgoing)) *
+                   sample_microfacet_pdf(self.roughness, &up_normal, &halfway) *
+                   //  sample_microfacet_pdf(roughness, up_normal, halfway, outgoing) /
+                   f32::abs(dot(&halfway, incoming)) /  // here we use incoming as from pbrt
+                   f32::powf(rel_ior * dot(&halfway, incoming) + dot(&halfway, outgoing), 2.0)
+        }
+    }
+
+    fn sample_refractive_pdf_delta(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        if f32::abs(self.ior - 1.0) < 1e-3 {
+            if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+                return 1.0;
+            } else {
+                return 0.0;
+            }
+        }
+        let entering = dot(normal, outgoing) >= 0.0;
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let rel_ior = if entering { self.ior } else { 1.0 / self.ior };
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            fresnel_dielectric(rel_ior, &up_normal, outgoing)
+        } else {
+            1.0 - fresnel_dielectric(rel_ior, &up_normal, outgoing)
         }
     }
 }
@@ -420,7 +586,7 @@ fn sample_hemisphere_cos_pdf(normal: &Vec3, incoming: &Vec3) -> f32 {
 fn fresnel_dielectric(eta: f32, normal: &Vec3, outgoing: &Vec3) -> f32 {
     // Implementation from
     // https://seblagarde.wordpress.com/2013/04/29/memo-on-fresnel-equations/
-    let cosw = dot(normal, outgoing).abs();
+    let cosw = f32::abs(dot(normal, outgoing));
 
     let sin2 = 1.0 - cosw * cosw;
     let eta2 = eta * eta;
@@ -496,10 +662,10 @@ fn microfacet_shadowing1(
     let roughness2 = roughness * roughness;
     let cosine2 = cosine * cosine;
     if ggx {
-        return 2.0 * cosine.abs()
-            / (cosine.abs() + f32::sqrt(cosine2 - roughness2 * cosine2 + roughness2));
+        return 2.0 * f32::abs(cosine)
+            / (f32::abs(cosine) + f32::sqrt(cosine2 - roughness2 * cosine2 + roughness2));
     } else {
-        let ci = cosine.abs() / (roughness * f32::sqrt(1.0 - cosine2));
+        let ci = f32::abs(cosine) / (roughness * f32::sqrt(1.0 - cosine2));
         if ci < 1.6 {
             return (3.535 * ci + 2.181 * ci * ci) / (1.0 + 2.276 * ci + 2.577 * ci * ci);
         } else {
