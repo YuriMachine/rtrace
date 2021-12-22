@@ -1,5 +1,6 @@
 use clap::{App, Arg};
 use image::ImageBuffer;
+use indicatif::ProgressBar;
 use rtrace::bvh::*;
 use rtrace::scene::*;
 use rtrace::trace::*;
@@ -72,7 +73,11 @@ pub fn main() {
 
     let scene_path = matches.value_of("scene").unwrap();
     let output_path = matches.value_of("output").unwrap();
+    println!("Loading scene...");
+    let scene_bar = ProgressBar::new(1);
+    scene_bar.inc(0);
     let scene = Scene::from_json(scene_path);
+    scene_bar.finish();
     let device = embree::Device::new();
     let bvh = BvhData::from_scene(&device, &scene, false);
     let params = RaytraceParams::from_args(&matches);
@@ -83,9 +88,13 @@ pub fn main() {
             .unwrap();
     }
     let mut state = RaytraceState::from_scene(&scene, &params);
+    println!("Rendering...");
+    let samples_bar = ProgressBar::new(params.samples as u64);
     for _ in 0..params.samples {
         raytrace_samples(&mut state, &params, &scene, &bvh);
+        samples_bar.inc(1);
     }
+    samples_bar.finish();
 
     let mut image_bytes = Vec::with_capacity(state.width * state.height * 3);
     for pixel in state.image.chunks(state.width) {
