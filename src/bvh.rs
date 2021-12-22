@@ -1,6 +1,6 @@
-use crate::{scene::Scene, trace::Ray};
-use glm::{vec2, Vec2};
-use nalgebra_glm::{vec4, Vec4};
+use crate::{scene::Scene, trace::Ray, zero2};
+use glm::{vec2, vec4};
+use glm::{Vec2, Vec4};
 
 #[derive(Debug)]
 pub struct BvhIntersection {
@@ -16,7 +16,7 @@ impl Default for BvhIntersection {
         BvhIntersection {
             instance: usize::MAX,
             element: usize::MAX,
-            uv: vec2(0.0, 0.0),
+            uv: zero2!(),
             distance: 0.0,
             hit: false,
         }

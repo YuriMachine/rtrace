@@ -1,6 +1,6 @@
 use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
-use crate::{one3, scene::*, utils::*, zero3, zero4};
+use crate::{one3, scene::*, utils::*, vec_comp_mul, zero3, zero4};
 use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
 use glm::{Vec3, Vec4};
 use parking_lot::Mutex;
@@ -149,7 +149,7 @@ pub fn shade_naive(
     while bounce < params.bounces {
         let intersection = bvh.intersect(ray);
         if !intersection.hit {
-            radiance += weight.component_mul(&scene.eval_environment(ray.direction));
+            radiance += vec_comp_mul!(weight, &scene.eval_environment(ray.direction));
             break;
         }
 
@@ -170,7 +170,7 @@ pub fn shade_naive(
         }
 
         // accumulate emission
-        radiance += weight.component_mul(&material.eval_emission(&normal, &outgoing));
+        radiance += vec_comp_mul!(weight, &material.eval_emission(&normal, &outgoing));
 
         // next direction
         let incoming;
@@ -181,7 +181,7 @@ pub fn shade_naive(
             }
             let eval_bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming)
                 / material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
-            weight = weight.component_mul(&eval_bsdfcos);
+            weight = vec_comp_mul!(weight, &eval_bsdfcos);
         } else {
             incoming = material.sample_delta(&normal, &outgoing, rand1(rng));
             if is_null(&incoming, epsilon()) {
@@ -189,7 +189,7 @@ pub fn shade_naive(
             }
             let eval_delta = material.eval_delta(&normal, &outgoing, &incoming)
                 / material.sample_delta_pdf(&normal, &outgoing, &incoming);
-            weight = weight.component_mul(&eval_delta);
+            weight = vec_comp_mul!(weight, &eval_delta);
         }
 
         // check weight
@@ -228,7 +228,7 @@ pub fn shade_raytrace(
     while bounce < params.bounces {
         let intersection = bvh.intersect(ray);
         if !intersection.hit {
-            radiance += weight.component_mul(&scene.eval_environment(ray.direction));
+            radiance += vec_comp_mul!(weight, &scene.eval_environment(ray.direction));
             break;
         }
 
@@ -249,7 +249,7 @@ pub fn shade_raytrace(
         }
 
         // accumulate emission
-        radiance += weight.component_mul(&material.eval_emission(&normal, &outgoing));
+        radiance += vec_comp_mul!(weight, &material.eval_emission(&normal, &outgoing));
 
         // next direction
         let incoming;
@@ -260,7 +260,7 @@ pub fn shade_raytrace(
             }
             let eval_bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming)
                 / material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
-            weight = weight.component_mul(&eval_bsdfcos);
+            weight = vec_comp_mul!(weight, &eval_bsdfcos);
         } else {
             incoming = material.sample_delta(&normal, &outgoing, rand1(rng));
             if is_null(&incoming, epsilon()) {
@@ -268,7 +268,7 @@ pub fn shade_raytrace(
             }
             let eval_delta = material.eval_delta(&normal, &outgoing, &incoming)
                 / material.sample_delta_pdf(&normal, &outgoing, &incoming);
-            weight = weight.component_mul(&eval_delta);
+            weight = vec_comp_mul!(weight, &eval_delta);
         }
 
         // check weight

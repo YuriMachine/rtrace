@@ -1,11 +1,10 @@
-use std::f32::consts::PI;
-
 use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
 use glm::{dot, inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4};
 use glm::{Mat3, Mat3x4, Vec2, Vec3, Vec4};
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+use std::f32::consts::PI;
 
 #[macro_export]
 macro_rules! zero2 {
@@ -39,6 +38,20 @@ macro_rules! one3 {
 macro_rules! one4 {
     () => {
         vec4(1.0, 1.0, 1.0, 1.0)
+    };
+}
+
+#[macro_export]
+macro_rules! vec_comp_mul {
+    ($a:expr, $b:expr) => {
+        $a.component_mul($b)
+    };
+}
+
+#[macro_export]
+macro_rules! vec_comp_div {
+    ($a:expr, $b:expr) => {
+        $a.component_div($b)
     };
 }
 

@@ -1,9 +1,9 @@
 use crate::bvh::BvhIntersection;
 use crate::shading::MaterialPoint;
-use crate::{one4, scene_components::*, zero3, zero4};
-use crate::{utils::*, zero2};
-use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4, TVec2, Vec2};
-use glm::{Vec3, Vec4};
+use crate::utils::*;
+use crate::{one4, scene_components::*, vec_comp_mul, zero2, zero3, zero4};
+use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4};
+use glm::{TVec2, Vec2, Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
 use ply::ply::Property;
 use ply_rs as ply;
@@ -257,7 +257,7 @@ impl Scene {
             let texture = self
                 .eval_texture(environment.emission_tex, &texcoord, false, false, false)
                 .xyz();
-            emission += environment.emission.component_mul(&texture);
+            emission += vec_comp_mul!(environment.emission, &texture);
         }
         emission
     }
@@ -333,17 +333,17 @@ impl Scene {
 
         // material point
         let m_type = material.m_type;
-        let emission = material.emission.component_mul(&emission_tex.xyz());
-        let color = material
-            .color
-            .component_mul(&color_shp.xyz())
-            .component_mul(&color_tex.xyz());
+        let emission = vec_comp_mul!(material.emission, &emission_tex.xyz());
+        let color = vec_comp_mul!(
+            vec_comp_mul!(material.color, &color_shp.xyz()),
+            &color_tex.xyz()
+        );
         let opacity = material.opacity * color_tex.w * color_shp.w;
         let metallic = material.metallic * roughness_tex.z;
         let mut roughness = material.roughness * roughness_tex.y;
         roughness *= roughness;
         let ior = material.ior;
-        let scattering = material.scattering.component_mul(&(scattering_tex).xyz());
+        let scattering = vec_comp_mul!(material.scattering, &(scattering_tex).xyz());
         let scanisotropy = material.scanisotropy;
         let trdepth = material.trdepth;
 

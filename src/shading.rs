@@ -1,5 +1,5 @@
 use crate::scene_components::MaterialType;
-use crate::{one3, utils::*, zero3};
+use crate::{one3, utils::*, vec_comp_div, vec_comp_mul, zero3};
 use glm::{dot, normalize, vec3};
 use glm::{Vec2, Vec3};
 use std::f32::consts::PI;
@@ -559,7 +559,10 @@ impl MaterialPoint {
 
 fn reflectivity_to_eta(reflectivity: &Vec3) -> Vec3 {
     let r_clamp = glm::clamp(reflectivity, 0.0, 0.99);
-    return (one3!() + glm::sqrt(&r_clamp)).component_div(&(one3!() - glm::sqrt(&r_clamp)));
+    return vec_comp_div!(
+        one3!() + glm::sqrt(&r_clamp),
+        &(one3!() - glm::sqrt(&r_clamp))
+    );
 }
 
 fn sample_hemisphere_cos(normal: &Vec3, rn: &Vec2) -> Vec3 {
@@ -613,19 +616,19 @@ fn fresnel_conductor(eta: &Vec3, etak: &Vec3, normal: &Vec3, outgoing: &Vec3) ->
     cosw = cosw.clamp(-1.0, 1.0);
     let cos2 = cosw * cosw;
     let sin2 = (1.0 - cos2).clamp(0.0, 1.0);
-    let eta2 = eta.component_mul(eta);
-    let etak2 = etak.component_mul(etak);
+    let eta2 = vec_comp_mul!(eta, eta);
+    let etak2 = vec_comp_mul!(etak, etak);
 
     let t0 = eta2 - etak2.add_scalar(-sin2);
-    let a2plusb2 = glm::sqrt(&(t0.component_mul(&t0) + 4.0 * eta2.component_mul(&etak2)));
+    let a2plusb2 = glm::sqrt(&(vec_comp_mul!(t0, &t0) + 4.0 * vec_comp_mul!(eta2, &etak2)));
     let t1 = a2plusb2.add_scalar(cos2);
     let a = glm::sqrt(&((a2plusb2 + t0) / 2.0));
     let t2 = 2.0 * a * cosw;
-    let rs = (t1 - t2).component_div(&(t1 + t2));
+    let rs = vec_comp_div!(t1 - t2, &(t1 + t2));
 
     let t3 = cos2 * a2plusb2.add_scalar(sin2) * sin2;
     let t4 = t2 * sin2;
-    let rp = rs.component_mul(&(t3 - t4).component_div(&(t3 + t4)));
+    let rp = vec_comp_mul!(rs, &vec_comp_div!(t3 - t4, &(t3 + t4)));
     (rp + rs) / 2.0
 }
 
