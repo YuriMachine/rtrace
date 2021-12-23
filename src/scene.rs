@@ -1,18 +1,15 @@
-use crate::bvh::BvhData;
-use crate::bvh::BvhIntersection;
+use crate::bvh::{BvhData, BvhIntersection};
+use crate::scene_components::*;
 use crate::shading::*;
 use crate::trace::Ray;
 use crate::utils::*;
-use crate::{one4, scene_components::*, vec_comp_mul, zero2, zero3, zero4};
-use glm::{clamp, dot, log, mat3x4, normalize, vec2, vec3, vec4};
+use crate::{one4, vec_comp_mul, zero2, zero3, zero4};
+use glm::{clamp, dot, log, make_mat3x4, mat3x4, normalize, vec2, vec3, vec4};
 use glm::{TVec2, Vec2, Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
-use nalgebra_glm::make_mat3x4;
-use nalgebra_glm::Mat3x4;
 use ply::ply::Property;
 use ply_rs as ply;
-use rayon::iter::IntoParallelRefMutIterator;
-use rayon::iter::ParallelIterator;
+use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::Deserialize;
 use std::collections::VecDeque;
 use std::f32::consts::PI;
@@ -523,20 +520,24 @@ impl Scene {
     fn init_lights(&mut self) {
         for (handle, instance) in self.instances.iter().enumerate() {
             let material = &self.materials[instance.material];
-            if material.emission == zero3!() {
+            if glm::is_null(&material.emission, glm::epsilon()) {
                 continue;
             }
             let shape = &self.shapes[instance.shape];
             if shape.triangles.is_empty() && shape.quads.is_empty() {
                 continue;
             }
-
+            let mut light = Light {
+                instance: handle,
+                environment: INVALID,
+                elements_cdf: VecDeque::new(),
+            };
             if !shape.triangles.is_empty() {
                 let elems_num = shape.triangles.len();
-                let mut elements_cdf = VecDeque::with_capacity(elems_num);
+                light.elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let triangle = shape.triangles[idx];
-                    elements_cdf.insert(
+                    light.elements_cdf.insert(
                         idx,
                         triangle_area(
                             &shape.positions[triangle.x as usize],
@@ -545,21 +546,15 @@ impl Scene {
                         ),
                     );
                     if idx != 0 {
-                        elements_cdf[idx] += elements_cdf[idx - 1];
+                        light.elements_cdf[idx] += light.elements_cdf[idx - 1];
                     }
                 }
-                let light = Light {
-                    instance: handle,
-                    environment: INVALID,
-                    elements_cdf,
-                };
-                self.lights.push(light);
             } else if !shape.quads.is_empty() {
                 let elems_num = shape.quads.len();
-                let mut elements_cdf = VecDeque::with_capacity(elems_num);
+                light.elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let quad = shape.quads[idx];
-                    elements_cdf.insert(
+                    light.elements_cdf.insert(
                         idx,
                         quad_area(
                             &shape.positions[quad.x as usize],
@@ -569,42 +564,37 @@ impl Scene {
                         ),
                     );
                     if idx != 0 {
-                        elements_cdf[idx] += elements_cdf[idx - 1];
+                        light.elements_cdf[idx] += light.elements_cdf[idx - 1];
                     }
                 }
-                let light = Light {
-                    instance: handle,
-                    environment: INVALID,
-                    elements_cdf,
-                };
-                self.lights.push(light);
             }
+            self.lights.push(light);
         }
 
         for (handle, environment) in self.environments.iter().enumerate() {
-            if environment.emission == zero3!() {
+            if glm::is_null(&environment.emission, glm::epsilon()) {
                 continue;
             }
+            let mut light = Light {
+                instance: INVALID,
+                environment: handle,
+                elements_cdf: VecDeque::new(),
+            };
             if environment.emission_tex != INVALID {
                 let texture = &self.textures[environment.emission_tex];
                 let elems_num = (texture.width * texture.height) as usize;
-                let mut elements_cdf = VecDeque::with_capacity(elems_num);
+                light.elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let (i, j) = (idx % texture.width as usize, idx / texture.width as usize);
                     let th = (j as f32 + 0.5) * PI / texture.height as f32;
                     let value = texture.lookup(i as u32, j as u32, false);
-                    elements_cdf.insert(idx, value.max() * f32::sin(th));
+                    light.elements_cdf.insert(idx, value.max() * f32::sin(th));
                     if idx != 0 {
-                        elements_cdf[idx] += elements_cdf[idx - 1];
+                        light.elements_cdf[idx] += light.elements_cdf[idx - 1];
                     }
                 }
-                let light = Light {
-                    instance: INVALID,
-                    environment: handle,
-                    elements_cdf,
-                };
-                self.lights.push(light);
             }
+            self.lights.push(light);
         }
     }
 
