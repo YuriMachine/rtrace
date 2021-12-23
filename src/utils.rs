@@ -256,6 +256,58 @@ pub fn quad_normal(p0: &Vec3, p1: &Vec3, p2: &Vec3, p3: &Vec3) -> Vec3 {
     normalize(&(triangle_normal(p0, p1, p3) + triangle_normal(p2, p3, p1)))
 }
 
+pub fn triangle_tangents_fromuv(
+    p0: &Vec3,
+    p1: &Vec3,
+    p2: &Vec3,
+    uv0: &Vec2,
+    uv1: &Vec2,
+    uv2: &Vec2,
+) -> (Vec3, Vec3) {
+    // Follows the definition in http://www.terathon.com/code/tangent.html and
+    // https://gist.github.com/aras-p/2843984
+    // normal points up from texture space
+    let p = p1 - p0;
+    let q = p2 - p0;
+    let s = vec2(uv1.x - uv0.x, uv2.x - uv0.x);
+    let t = vec2(uv1.y - uv0.y, uv2.y - uv0.y);
+    let div = s.x * t.y - s.y * t.x;
+
+    if div != 0.0 {
+        let tu = vec3(
+            t.y * p.x - t.x * q.x,
+            t.y * p.y - t.x * q.y,
+            t.y * p.z - t.x * q.z,
+        ) / div;
+        let tv = vec3(
+            s.x * q.x - s.y * p.x,
+            s.x * q.y - s.y * p.y,
+            s.x * q.z - s.y * p.z,
+        ) / div;
+        (tu, tv)
+    } else {
+        (vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0))
+    }
+}
+
+pub fn quad_tangents_fromuv(
+    p0: &Vec3,
+    p1: &Vec3,
+    p2: &Vec3,
+    p3: &Vec3,
+    uv0: &Vec2,
+    uv1: &Vec2,
+    uv2: &Vec2,
+    uv3: &Vec2,
+    current_uv: &Vec2,
+) -> (Vec3, Vec3) {
+    if current_uv.x + current_uv.y <= 1.0 {
+        triangle_tangents_fromuv(p0, p1, p3, uv0, uv1, uv3)
+    } else {
+        triangle_tangents_fromuv(p2, p3, p1, uv2, uv3, uv1)
+    }
+}
+
 #[inline(always)]
 pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
     normalize(&(a - b * dot(a, b)))

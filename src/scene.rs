@@ -7,6 +7,8 @@ use crate::{one4, scene_components::*, vec_comp_mul, zero2, zero3, zero4};
 use glm::{clamp, dot, log, mat3x4, normalize, vec2, vec3, vec4};
 use glm::{TVec2, Vec2, Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
+use nalgebra_glm::make_mat3x4;
+use nalgebra_glm::Mat3x4;
 use ply::ply::Property;
 use ply_rs as ply;
 use rayon::iter::IntoParallelRefMutIterator;
@@ -227,8 +229,45 @@ impl Scene {
         }
     }
 
+    fn eval_element_tangents(&self, instance: &Instance, element: usize) -> (Vec3, Vec3) {
+        let shape = &self.shapes[instance.shape];
+        if !shape.triangles.is_empty() && !shape.texcoords.is_empty() {
+            let t = shape.triangles[element];
+            let (tu, tv) = triangle_tangents_fromuv(
+                &shape.positions[t.x as usize],
+                &shape.positions[t.y as usize],
+                &shape.positions[t.z as usize],
+                &shape.texcoords[t.x as usize],
+                &shape.texcoords[t.y as usize],
+                &shape.texcoords[t.z as usize],
+            );
+            (
+                transform_direction_frame(&instance.frame, &tu),
+                transform_direction_frame(&instance.frame, &tv),
+            )
+        } else if !shape.quads.is_empty() && !shape.texcoords.is_empty() {
+            let q = shape.quads[element];
+            let (tu, tv) = quad_tangents_fromuv(
+                &shape.positions[q.x as usize],
+                &shape.positions[q.y as usize],
+                &shape.positions[q.z as usize],
+                &shape.positions[q.w as usize],
+                &shape.texcoords[q.x as usize],
+                &shape.texcoords[q.y as usize],
+                &shape.texcoords[q.z as usize],
+                &shape.texcoords[q.w as usize],
+                &zero2!(),
+            );
+            (
+                transform_direction_frame(&instance.frame, &tu),
+                transform_direction_frame(&instance.frame, &tv),
+            )
+        } else {
+            (zero3!(), zero3!())
+        }
+    }
+
     fn eval_normalmap(&self, instance: &Instance, element: usize, uv: &Vec2) -> Vec3 {
-        /*
         let shape = &self.shapes[instance.shape];
         let material = &self.materials[instance.material];
         // apply normal mapping
@@ -237,17 +276,30 @@ impl Scene {
         if material.normal_tex != INVALID
             && (!shape.triangles.is_empty() || !shape.quads.is_empty())
         {
-            let normalmap  = -1.0 + 2.0 * self.eval_texture(material.normal_tex, &texcoord, false, false, false).xyz();
-            let (tu, tv)    = eval_element_tangents(scene, instance, element);
-            let frame       = frame3f{tu, tv, normal, {0, 0, 0}};
-            frame.x          = orthonormalize(frame.x, frame.z);
-            frame.y          = normalize(cross(frame.z, frame.x));
-            let flip_v      = dot(frame.y, tv) < 0;
-            normalmap.y *= flip_v ? 1 : -1;  // flip vertical axis
-            normal = transform_normal(frame, normalmap);
-
-        }*/
-        todo!()
+            let texture = self
+                .eval_texture(material.normal_tex, &texcoord, false, false, false)
+                .xyz();
+            let mut normalmap = vec3(-1.0, -1.0, -1.0) + 2.0 * texture;
+            let (tu, tv) = self.eval_element_tangents(instance, element);
+            let frame_x = orthonormalize(&tu, &normal);
+            let frame_y = normalize(&glm::cross(&normal, &frame_x));
+            let flip_v = dot(&frame_y, &tv) < 0.0;
+            if !flip_v {
+                normalmap.y *= -1.0; // flip vertical axis
+            }
+            let frame = make_mat3x4(
+                &[
+                    frame_x.as_slice(),
+                    frame_y.as_slice(),
+                    normal.as_slice(),
+                    zero3!().as_slice(),
+                ]
+                .concat(),
+            );
+            transform_normal_frame(&frame, &normalmap, false)
+        } else {
+            normal
+        }
     }
 
     fn eval_color(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec4 {
