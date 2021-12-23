@@ -1,7 +1,8 @@
 use crate::scene_components::MaterialType;
 use crate::{one3, utils::*, vec_comp_div, vec_comp_mul, zero3};
-use glm::{dot, normalize, vec3};
+use glm::{dot, normalize, vec2, vec3};
 use glm::{Vec2, Vec3};
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 
 pub struct MaterialPoint {
@@ -720,4 +721,43 @@ fn sample_microfacet_pdf(roughness: f32, normal: &Vec3, halfway: &Vec3) -> f32 {
     } else {
         microfacet_distribution(roughness, normal, halfway, true) * cosine
     }
+}
+
+#[inline(always)]
+pub fn sample_uniform(size: usize, r: f32) -> usize {
+    usize::clamp((r * size as f32) as usize, 0, size - 1)
+}
+
+#[inline(always)]
+pub fn sample_uniform_pdf(size: usize) -> f32 {
+    1.0 / size as f32
+}
+
+#[inline(always)]
+// try alias method if this does not work
+pub fn sample_discrete(cdf: &VecDeque<f32>, r: f32) -> usize {
+    let r = f32::clamp(r * cdf.back().unwrap(), 0.0, cdf.back().unwrap() - 0.00001);
+    let idx = cdf.partition_point(|&n| n < r) - *cdf.front().unwrap() as usize;
+    usize::clamp(idx, 0, cdf.len() - 1)
+}
+
+pub fn sample_discrete_pdf(cdf: &VecDeque<f32>, idx: usize) -> f32 {
+    if idx == 0 {
+        cdf[0]
+    } else {
+        cdf[idx] - cdf[idx - 1]
+    }
+}
+
+#[inline(always)]
+pub fn sample_triangle(ruv: &Vec2) -> Vec2 {
+    vec2(1.0 - f32::sqrt(ruv.x), ruv.y * f32::sqrt(ruv.x))
+}
+
+#[inline(always)]
+pub fn sample_sphere(ruv: &Vec2) -> Vec3 {
+    let z = 2.0 * ruv.y - 1.0;
+    let r = f32::sqrt(f32::clamp(1.0 - z * z, 0.0, 1.0));
+    let phi = 2.0 * PI * ruv.x;
+    vec3(r * f32::cos(phi), r * f32::sin(phi), z)
 }

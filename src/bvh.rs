@@ -1,3 +1,4 @@
+use crate::utils::inverse_frame;
 use crate::{scene::Scene, trace::Ray, zero2};
 use glm::{vec2, vec4};
 use glm::{Vec2, Vec4};
@@ -220,6 +221,36 @@ impl BvhData<'_> {
         if ray_hit.hit.hit() {
             BvhIntersection {
                 instance: ray_hit.hit.instID[0] as usize,
+                element: ray_hit.hit.primID as usize,
+                uv: vec2(ray_hit.hit.u, ray_hit.hit.v),
+                distance: ray_hit.ray.tfar,
+                hit: true,
+            }
+        } else {
+            BvhIntersection::default()
+        }
+    }
+
+    pub fn intersect_instance(
+        &self,
+        scene: &Scene,
+        instance_idx: usize,
+        direction: Ray,
+    ) -> BvhIntersection {
+        let instance = &scene.instances[instance_idx];
+        let inv_ray = direction.transform(&inverse_frame(&instance.frame, true));
+        let embree_ray = embree::Ray::new(
+            inv_ray.origin,
+            inv_ray.direction,
+            inv_ray.tmin,
+            inv_ray.tmax,
+        );
+        let mut ray_hit = embree::RayHit::new(embree_ray);
+        let mut intersection_ctx = embree::IntersectContext::incoherent();
+        self.shapes[instance.shape].intersect(&mut intersection_ctx, &mut ray_hit);
+        if ray_hit.hit.hit() {
+            BvhIntersection {
+                instance: instance_idx,
                 element: ray_hit.hit.primID as usize,
                 uv: vec2(ray_hit.hit.u, ray_hit.hit.v),
                 distance: ray_hit.ray.tfar,

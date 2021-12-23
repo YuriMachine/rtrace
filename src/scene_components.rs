@@ -1,9 +1,9 @@
-use crate::bvh::BvhIntersection;
 use crate::trace::Ray;
 use crate::{one4, utils::*, zero3};
 use glm::{mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
 use glm::{Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
 use serde::Deserialize;
+use std::collections::VecDeque;
 const INVALID: usize = usize::MAX;
 
 #[derive(Debug, Deserialize)]
@@ -241,15 +241,14 @@ pub struct Shape {
 }
 
 impl Shape {
-    pub fn eval_position(&self, intersection: &BvhIntersection) -> Vec3 {
-        let element = intersection.element;
+    pub fn eval_position(&self, element: usize, uv: &Vec2) -> Vec3 {
         if !self.triangles.is_empty() {
             let triangle = &self.triangles[element];
             interpolate_triangle(
                 &self.positions[triangle.x as usize],
                 &self.positions[triangle.y as usize],
                 &self.positions[triangle.z as usize],
-                &intersection.uv,
+                uv,
             )
         } else if !self.quads.is_empty() {
             let quad = &self.quads[element];
@@ -258,14 +257,14 @@ impl Shape {
                 &self.positions[quad.y as usize],
                 &self.positions[quad.z as usize],
                 &self.positions[quad.w as usize],
-                &intersection.uv,
+                uv,
             )
         } else if !self.lines.is_empty() {
             let line = &self.lines[element];
             interpolate_line(
                 &self.positions[line.x as usize],
                 &self.positions[line.y as usize],
-                intersection.uv.x,
+                uv.x,
             )
         } else if !self.points.is_empty() {
             let point = self.points[element];
@@ -275,8 +274,7 @@ impl Shape {
         }
     }
 
-    pub fn eval_normal(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
-        let element = intersection.element;
+    pub fn eval_normal(&self, instance: &Instance, element: usize) -> Vec3 {
         if !self.triangles.is_empty() {
             let triangle = self.triangles[element];
             transform_normal_frame(
@@ -320,7 +318,7 @@ impl Shape {
 pub struct Light {
     pub instance: usize,
     pub environment: usize,
-    pub elements_cdf: Vec<f32>,
+    pub elements_cdf: VecDeque<f32>,
 }
 
 impl Default for Light {
@@ -328,7 +326,7 @@ impl Default for Light {
         Light {
             instance: INVALID,
             environment: INVALID,
-            elements_cdf: Vec::new(),
+            elements_cdf: VecDeque::new(),
         }
     }
 }

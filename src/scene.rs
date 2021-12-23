@@ -1,13 +1,17 @@
+use crate::bvh::BvhData;
 use crate::bvh::BvhIntersection;
-use crate::shading::MaterialPoint;
+use crate::shading::*;
+use crate::trace::Ray;
 use crate::utils::*;
 use crate::{one4, scene_components::*, vec_comp_mul, zero2, zero3, zero4};
 use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4};
 use glm::{TVec2, Vec2, Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
+use nalgebra_glm::normalize;
 use ply::ply::Property;
 use ply_rs as ply;
 use serde::Deserialize;
+use std::collections::VecDeque;
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::BufReader;
@@ -34,19 +38,18 @@ impl Scene {
         let instance = &self.instances[intersection.instance];
         let shape = &self.shapes[instance.shape];
         if !shape.triangles.is_empty() || !shape.quads.is_empty() {
-            self.eval_position(instance, intersection)
+            self.eval_position(instance, intersection.element, &intersection.uv)
         } else if !shape.lines.is_empty() {
-            self.eval_position(instance, intersection)
+            self.eval_position(instance, intersection.element, &intersection.uv)
         } else if !shape.points.is_empty() {
-            shape.eval_position(intersection)
+            shape.eval_position(intersection.element, &intersection.uv)
         } else {
             zero3!()
         }
     }
 
-    fn eval_position(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+    fn eval_position(&self, instance: &Instance, element: usize, uv: &Vec2) -> Vec3 {
         let shape = &self.shapes[instance.shape];
-        let element = intersection.element;
         if !shape.triangles.is_empty() {
             let triangle = &shape.triangles[element];
             transform_point(
@@ -55,7 +58,7 @@ impl Scene {
                     &shape.positions[triangle.x as usize],
                     &shape.positions[triangle.y as usize],
                     &shape.positions[triangle.z as usize],
-                    &intersection.uv,
+                    uv,
                 ),
             )
         } else if !shape.quads.is_empty() {
@@ -67,7 +70,7 @@ impl Scene {
                     &shape.positions[quad.y as usize],
                     &shape.positions[quad.z as usize],
                     &shape.positions[quad.w as usize],
-                    &intersection.uv,
+                    uv,
                 ),
             )
         } else if !shape.lines.is_empty() {
@@ -77,7 +80,7 @@ impl Scene {
                 &interpolate_line(
                     &shape.positions[line.x as usize],
                     &shape.positions[line.y as usize],
-                    intersection.uv.x,
+                    uv.x,
                 ),
             )
         } else if !shape.points.is_empty() {
@@ -92,12 +95,12 @@ impl Scene {
         let instance = &self.instances[intersection.instance];
         let shape = &self.shapes[instance.shape];
         let material = &self.materials[instance.material];
-        let uv = intersection.uv;
+        let uv = &intersection.uv;
         if !shape.triangles.is_empty() || !shape.quads.is_empty() {
             let normal = if material.normal_tex == INVALID {
-                self.eval_normal(instance, intersection)
+                self.eval_normal(instance, intersection.element, uv)
             } else {
-                self.eval_normalmap(instance, intersection)
+                self.eval_normalmap(instance, intersection.element, uv)
             };
             if dot(&normal, outgoing) >= 0.0 || material.m_type == MaterialType::Refractive {
                 normal
@@ -105,7 +108,7 @@ impl Scene {
                 -normal
             }
         } else if !shape.lines.is_empty() {
-            let normal = self.eval_normal(instance, intersection);
+            let normal = self.eval_normal(instance, intersection.element, uv);
             orthonormalize(outgoing, &normal)
         } else if !shape.points.is_empty() {
             // HACK: sphere
@@ -126,11 +129,10 @@ impl Scene {
         }
     }
 
-    fn eval_normal(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+    fn eval_normal(&self, instance: &Instance, element: usize, uv: &Vec2) -> Vec3 {
         let shape = &self.shapes[instance.shape];
-        let element = intersection.element;
         if shape.normals.is_empty() {
-            return shape.eval_normal(instance, intersection);
+            return shape.eval_normal(instance, element);
         }
         if !shape.triangles.is_empty() {
             let triangle = shape.triangles[element];
@@ -140,7 +142,7 @@ impl Scene {
                     &shape.normals[triangle.x as usize],
                     &shape.normals[triangle.y as usize],
                     &shape.normals[triangle.z as usize],
-                    &intersection.uv,
+                    uv,
                 )
                 .normalize(),
                 false,
@@ -154,7 +156,7 @@ impl Scene {
                     &shape.normals[quad.y as usize],
                     &shape.normals[quad.z as usize],
                     &shape.normals[quad.w as usize],
-                    &intersection.uv,
+                    uv,
                 )
                 .normalize(),
                 false,
@@ -166,7 +168,7 @@ impl Scene {
                 &interpolate_line(
                     &shape.normals[line.x as usize],
                     &shape.normals[line.y as usize],
-                    intersection.uv.x,
+                    uv.x,
                 )
                 .normalize(),
                 false,
@@ -182,17 +184,58 @@ impl Scene {
         }
     }
 
-    fn eval_normalmap(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec3 {
+    fn eval_element_normal(&self, instance: &Instance, element: usize) -> Vec3 {
+        let shape = &self.shapes[instance.shape];
+        if !shape.triangles.is_empty() {
+            let triangle = shape.triangles[element];
+            transform_normal_frame(
+                &instance.frame,
+                &triangle_normal(
+                    &shape.positions[triangle.x as usize],
+                    &shape.positions[triangle.y as usize],
+                    &shape.positions[triangle.z as usize],
+                ),
+                false,
+            )
+        } else if !shape.quads.is_empty() {
+            let quad = shape.quads[element];
+            transform_normal_frame(
+                &instance.frame,
+                &quad_normal(
+                    &shape.positions[quad.x as usize],
+                    &shape.positions[quad.y as usize],
+                    &shape.positions[quad.z as usize],
+                    &shape.positions[quad.w as usize],
+                ),
+                false,
+            )
+        } else if !shape.lines.is_empty() {
+            let line = shape.lines[element];
+            transform_normal_frame(
+                &instance.frame,
+                &line_tangent(
+                    &shape.positions[line.x as usize],
+                    &shape.positions[line.y as usize],
+                ),
+                false,
+            )
+        } else if !shape.points.is_empty() {
+            vec3(0.0, 0.0, 1.0)
+        } else {
+            zero3!()
+        }
+    }
+
+    fn eval_normalmap(&self, instance: &Instance, element: usize, uv: &Vec2) -> Vec3 {
+        /*
         let shape = &self.shapes[instance.shape];
         let material = &self.materials[instance.material];
-        let element = intersection.element;
         // apply normal mapping
-        let normal = self.eval_normal(instance, intersection);
-        let texcoord = self.eval_texcoord(instance, intersection);
+        let normal = self.eval_normal(instance, element, uv);
+        let texcoord = self.eval_texcoord(instance, element, uv);
         if material.normal_tex != INVALID
             && (!shape.triangles.is_empty() || !shape.quads.is_empty())
         {
-            /*
             let normalmap  = -1.0 + 2.0 * self.eval_texture(material.normal_tex, &texcoord, false, false, false).xyz();
             let (tu, tv)    = eval_element_tangents(scene, instance, element);
             let frame       = frame3f{tu, tv, normal, {0, 0, 0}};
@@ -201,8 +244,8 @@ impl Scene {
             let flip_v      = dot(frame.y, tv) < 0;
             normalmap.y *= flip_v ? 1 : -1;  // flip vertical axis
             normal = transform_normal(frame, normalmap);
-            */
-        }
+
+        }*/
         todo!()
     }
 
@@ -322,7 +365,7 @@ impl Scene {
     pub fn eval_material(&self, intersection: &BvhIntersection) -> MaterialPoint {
         let instance = &self.instances[intersection.instance];
         let material = &self.materials[instance.material];
-        let texcoord = &self.eval_texcoord(instance, intersection);
+        let texcoord = &self.eval_texcoord(instance, intersection.element, &intersection.uv);
 
         // evaluate textures
         let emission_tex = self.eval_texture(material.emission_tex, texcoord, true, false, false);
@@ -388,12 +431,10 @@ impl Scene {
         }
     }
 
-    fn eval_texcoord(&self, instance: &Instance, intersection: &BvhIntersection) -> Vec2 {
+    fn eval_texcoord(&self, instance: &Instance, element: usize, uv: &Vec2) -> Vec2 {
         let shape = &self.shapes[instance.shape];
-        let element = intersection.element;
-        let uv = intersection.uv;
         if shape.texcoords.is_empty() {
-            return uv;
+            return *uv;
         }
         if !shape.triangles.is_empty() {
             let t = shape.triangles[element];
@@ -439,13 +480,16 @@ impl Scene {
 
             if !shape.triangles.is_empty() {
                 let elems_num = shape.triangles.len();
-                let mut elements_cdf = Vec::with_capacity(elems_num);
+                let mut elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let triangle = shape.triangles[idx];
-                    elements_cdf[idx] = triangle_area(
-                        &shape.positions[triangle.x as usize],
-                        &shape.positions[triangle.y as usize],
-                        &shape.positions[triangle.z as usize],
+                    elements_cdf.insert(
+                        idx,
+                        triangle_area(
+                            &shape.positions[triangle.x as usize],
+                            &shape.positions[triangle.y as usize],
+                            &shape.positions[triangle.z as usize],
+                        ),
                     );
                     if idx != 0 {
                         elements_cdf[idx] += elements_cdf[idx - 1];
@@ -459,14 +503,17 @@ impl Scene {
                 self.lights.push(light);
             } else if !shape.quads.is_empty() {
                 let elems_num = shape.quads.len();
-                let mut elements_cdf = Vec::with_capacity(elems_num);
+                let mut elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let quad = shape.quads[idx];
-                    elements_cdf[idx] = quad_area(
-                        &shape.positions[quad.x as usize],
-                        &shape.positions[quad.y as usize],
-                        &shape.positions[quad.z as usize],
-                        &shape.positions[quad.w as usize],
+                    elements_cdf.insert(
+                        idx,
+                        quad_area(
+                            &shape.positions[quad.x as usize],
+                            &shape.positions[quad.y as usize],
+                            &shape.positions[quad.z as usize],
+                            &shape.positions[quad.w as usize],
+                        ),
                     );
                     if idx != 0 {
                         elements_cdf[idx] += elements_cdf[idx - 1];
@@ -488,12 +535,12 @@ impl Scene {
             if environment.emission_tex != INVALID {
                 let texture = &self.textures[environment.emission_tex];
                 let elems_num = (texture.width * texture.height) as usize;
-                let mut elements_cdf = Vec::with_capacity(elems_num);
+                let mut elements_cdf = VecDeque::with_capacity(elems_num);
                 for idx in 0..elems_num {
                     let (i, j) = (idx % texture.width as usize, idx / texture.width as usize);
                     let th = (j as f32 + 0.5) * PI / texture.height as f32;
                     let value = texture.lookup(i as u32, j as u32, false);
-                    elements_cdf[idx] = value.max() * f32::sin(th);
+                    elements_cdf.insert(idx, value.max() * f32::sin(th));
                     if idx != 0 {
                         elements_cdf[idx] += elements_cdf[idx - 1];
                     }
@@ -506,6 +553,117 @@ impl Scene {
                 self.lights.push(light);
             }
         }
+    }
+
+    pub fn sample_lights(&self, position: &Vec3, rl: f32, rel: f32, ruv: &Vec2) -> Vec3 {
+        let light_id = sample_uniform(self.lights.len(), rl);
+        let light = &self.lights[light_id];
+        if light.instance != INVALID {
+            let instance = &self.instances[light.instance];
+            let shape = &self.shapes[instance.shape];
+            let element = sample_discrete(&light.elements_cdf, rel);
+            let uv = if !shape.triangles.is_empty() {
+                sample_triangle(ruv)
+            } else {
+                *ruv
+            };
+            let lposition = self.eval_position(&instance, element, &uv);
+            normalize(&(lposition - position))
+        } else if light.environment != INVALID {
+            let environment = &self.environments[light.environment];
+            if environment.emission_tex != INVALID {
+                let emission_tex = &self.textures[environment.emission_tex];
+                let idx = sample_discrete(&light.elements_cdf, rel);
+                let (u, v) = (
+                    ((idx % emission_tex.width as usize) as f32 + 0.5) / emission_tex.width as f32,
+                    ((idx / emission_tex.width as usize) as f32 + 0.5) / emission_tex.height as f32,
+                );
+                transform_direction_frame(
+                    &environment.frame,
+                    &vec3(
+                        f32::cos(u * 2.0 * PI) * f32::sin(v * PI),
+                        f32::cos(v * PI),
+                        f32::sin(u * 2.0 * PI) * f32::sin(v * PI),
+                    ),
+                )
+            } else {
+                sample_sphere(ruv)
+            }
+        } else {
+            zero3!()
+        }
+    }
+
+    pub fn sample_lights_pdf(&self, bvh: &BvhData<'_>, position: Vec3, direction: Vec3) -> f32 {
+        let mut pdf = 0.0;
+        for light in &self.lights {
+            if light.instance != INVALID {
+                let instance = &self.instances[light.instance];
+                // check all intersection
+                let mut lpdf = 0.0;
+                let mut next_position = position;
+                for _bounce in 0..100 {
+                    let intersection = bvh.intersect_instance(
+                        self,
+                        light.instance,
+                        Ray::new(next_position, direction),
+                    );
+                    if !intersection.hit {
+                        break;
+                    }
+                    // accumulate pdf
+                    let lposition =
+                        self.eval_position(&instance, intersection.element, &intersection.uv);
+                    let lnormal = self.eval_element_normal(instance, intersection.element);
+                    // prob triangle * area triangle = area triangle mesh
+                    let area = light.elements_cdf.back().unwrap();
+                    // try distance2
+                    lpdf += dot(&(lposition - position), &(lposition - position))
+                        / (f32::abs(dot(&lnormal, &direction)) * area);
+                    // continue
+                    next_position = lposition + direction * 1e-3;
+                }
+                pdf += lpdf;
+            } else if light.environment != INVALID {
+                let environment = &self.environments[light.environment];
+                if environment.emission_tex != INVALID {
+                    let emission_tex = &self.textures[environment.emission_tex];
+                    let wl = transform_direction_frame(
+                        &inverse_frame(&environment.frame, false),
+                        &direction,
+                    );
+                    let mut texcoord = vec2(
+                        f32::atan2(wl.z, wl.x) / (2.0 * PI),
+                        f32::acos(f32::clamp(wl.y, -1.0, 1.0)) / PI,
+                    );
+                    if texcoord.x < 0.0 {
+                        texcoord.x += 1.0;
+                    }
+                    let i = usize::clamp(
+                        (texcoord.x * emission_tex.width as f32) as usize,
+                        0,
+                        emission_tex.width as usize - 1,
+                    );
+                    let j = usize::clamp(
+                        (texcoord.y * emission_tex.height as f32) as usize,
+                        0,
+                        emission_tex.height as usize - 1,
+                    );
+                    let prob = sample_discrete_pdf(
+                        &light.elements_cdf,
+                        j * emission_tex.width as usize + i,
+                    ) / light.elements_cdf.back().unwrap();
+                    let angle = (2.0 * PI / emission_tex.width as f32)
+                        * (PI / emission_tex.height as f32)
+                        * f32::sin(PI * (j as f32 + 0.5) / emission_tex.height as f32);
+                    pdf += prob / angle;
+                } else {
+                    pdf += 1.0 / (4.0 * PI);
+                }
+            }
+        }
+        pdf *= sample_uniform_pdf(self.lights.len());
+        pdf
     }
 
     pub fn from_json<P: AsRef<Path> + Copy>(path: P) -> Scene {
@@ -579,6 +737,7 @@ impl Scene {
                 }
             }
         }
+        scene.init_lights();
         scene
     }
 

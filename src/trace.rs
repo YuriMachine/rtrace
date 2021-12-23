@@ -2,7 +2,7 @@ use crate::bvh::BvhData;
 use crate::utils::{rand1, sample_disk};
 use crate::{one3, scene::*, utils::*, vec_comp_mul, zero3, zero4};
 use glm::{epsilon, is_null, min2_scalar, vec2, vec3, vec3_to_vec4, vec4};
-use glm::{Vec3, Vec4};
+use glm::{Mat3x4, Vec3, Vec4};
 use parking_lot::Mutex;
 use rand::prelude::SmallRng;
 use rayon::prelude::*;
@@ -15,6 +15,23 @@ pub struct Ray {
     pub direction: Vec3,
     pub tmin: f32,
     pub tmax: f32,
+}
+
+impl Ray {
+    pub fn new(origin: Vec3, direction: Vec3) -> Self {
+        Self {
+            origin,
+            direction,
+            ..Default::default()
+        }
+    }
+
+    pub fn transform(&self, frame: &Mat3x4) -> Ray {
+        Self::new(
+            transform_point(frame, &self.origin),
+            transform_vector_frame(frame, &self.direction),
+        )
+    }
 }
 
 impl Default for Ray {
@@ -174,22 +191,22 @@ pub fn shade_naive(
 
         // next direction
         let incoming;
-        if material.roughness != 0.0 {
+        if !is_delta(&material) {
             incoming = material.sample_bsdfcos(&normal, &outgoing, rand1(rng), &rand2(rng));
             if is_null(&incoming, epsilon()) {
                 break;
             }
-            let eval_bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming)
+            let bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming)
                 / material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
-            weight = vec_comp_mul!(weight, &eval_bsdfcos);
+            weight = vec_comp_mul!(weight, &bsdfcos);
         } else {
             incoming = material.sample_delta(&normal, &outgoing, rand1(rng));
             if is_null(&incoming, epsilon()) {
                 break;
             }
-            let eval_delta = material.eval_delta(&normal, &outgoing, &incoming)
+            let delta = material.eval_delta(&normal, &outgoing, &incoming)
                 / material.sample_delta_pdf(&normal, &outgoing, &incoming);
-            weight = vec_comp_mul!(weight, &eval_delta);
+            weight = vec_comp_mul!(weight, &delta);
         }
 
         // check weight
@@ -253,22 +270,27 @@ pub fn shade_raytrace(
 
         // next direction
         let incoming;
-        if material.roughness != 0.0 {
-            incoming = material.sample_bsdfcos(&normal, &outgoing, rand1(rng), &rand2(rng));
+        if !is_delta(&material) {
+            incoming = if rand1(rng) < 0.5 {
+                material.sample_bsdfcos(&normal, &outgoing, rand1(rng), &rand2(rng))
+            } else {
+                scene.sample_lights(&position, rand1(rng), rand1(rng), &rand2(rng))
+            };
             if is_null(&incoming, epsilon()) {
                 break;
             }
-            let eval_bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming)
-                / material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
-            weight = vec_comp_mul!(weight, &eval_bsdfcos);
+            let bsdfcos = material.eval_bsdfcos(&normal, &outgoing, &incoming);
+            let bsdfcos_pdf = material.sample_bsdfcos_pdf(&normal, &outgoing, &incoming);
+            let lights_pdf = scene.sample_lights_pdf(bvh, position, incoming);
+            weight = vec_comp_mul!(weight, &(bsdfcos / (0.5 * bsdfcos_pdf + 0.5 * lights_pdf)));
         } else {
             incoming = material.sample_delta(&normal, &outgoing, rand1(rng));
             if is_null(&incoming, epsilon()) {
                 break;
             }
-            let eval_delta = material.eval_delta(&normal, &outgoing, &incoming)
+            let delta = material.eval_delta(&normal, &outgoing, &incoming)
                 / material.sample_delta_pdf(&normal, &outgoing, &incoming);
-            weight = vec_comp_mul!(weight, &eval_delta);
+            weight = vec_comp_mul!(weight, &delta);
         }
 
         // check weight

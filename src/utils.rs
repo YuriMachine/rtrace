@@ -1,3 +1,5 @@
+use crate::scene_components::MaterialType;
+use crate::shading::MaterialPoint;
 use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
 use glm::{dot, inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4};
 use glm::{Mat3, Mat3x4, Vec2, Vec3, Vec4};
@@ -76,6 +78,7 @@ impl RaytraceParams {
             "eyelight" => trace::shade_eyelight,
             "normal" => trace::shade_normals,
             "position" => trace::shade_position,
+            "naive" => trace::shade_naive,
             "raytrace" => trace::shade_raytrace,
             _ => trace::shade_raytrace,
         };
@@ -239,6 +242,21 @@ pub fn quad_area(p0: &Vec3, p1: &Vec3, p2: &Vec3, p3: &Vec3) -> f32 {
 }
 
 #[inline(always)]
+pub fn line_tangent(p0: &Vec3, p1: &Vec3) -> Vec3 {
+    normalize(&(p1 - p0))
+}
+
+#[inline(always)]
+pub fn triangle_normal(p0: &Vec3, p1: &Vec3, p2: &Vec3) -> Vec3 {
+    normalize(&glm::cross(&(p1 - p0), &(p2 - p0)))
+}
+
+#[inline(always)]
+pub fn quad_normal(p0: &Vec3, p1: &Vec3, p2: &Vec3, p3: &Vec3) -> Vec3 {
+    normalize(&(triangle_normal(p0, p1, p3) + triangle_normal(p2, p3, p1)))
+}
+
+#[inline(always)]
 pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
     normalize(&(a - b * dot(a, b)))
 }
@@ -322,4 +340,12 @@ pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
 #[inline(always)]
 pub fn is_finite(weight: &Vec3) -> bool {
     f32::is_finite(weight.x) && f32::is_finite(weight.y) && f32::is_finite(weight.z)
+}
+
+#[inline(always)]
+pub fn is_delta(material: &MaterialPoint) -> bool {
+    (material.m_type == MaterialType::Reflective && material.roughness == 0.0)
+        || (material.m_type == MaterialType::Refractive && material.roughness == 0.0)
+        || (material.m_type == MaterialType::Transparent && material.roughness == 0.0)
+        || (material.m_type == MaterialType::Volumetric)
 }
