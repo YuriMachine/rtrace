@@ -4,12 +4,13 @@ use crate::shading::*;
 use crate::trace::Ray;
 use crate::utils::*;
 use crate::{one4, scene_components::*, vec_comp_mul, zero2, zero3, zero4};
-use glm::{clamp, dot, log, mat3x4, vec2, vec3, vec4};
+use glm::{clamp, dot, log, mat3x4, normalize, vec2, vec3, vec4};
 use glm::{TVec2, Vec2, Vec3, Vec4};
 use linked_hash_map::LinkedHashMap;
-use nalgebra_glm::normalize;
 use ply::ply::Property;
 use ply_rs as ply;
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::iter::ParallelIterator;
 use serde::Deserialize;
 use std::collections::VecDeque;
 use std::f32::consts::PI;
@@ -666,12 +667,12 @@ impl Scene {
         pdf
     }
 
-    pub fn from_json<P: AsRef<Path> + Copy>(path: P) -> Scene {
+    pub fn from_json<P: AsRef<Path> + Copy + Sync>(path: P) -> Scene {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
         let mut scene: Scene = serde_json::from_reader(reader).expect("unable to parse JSON");
 
-        for shape in &mut scene.shapes {
+        scene.shapes.par_iter_mut().for_each(|shape| {
             if !shape.uri.is_empty() {
                 let mut ply_file =
                     File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
@@ -703,9 +704,9 @@ impl Scene {
                     }
                 }
             }
-        }
+        });
 
-        for texture in &mut scene.textures {
+        scene.textures.par_iter_mut().for_each(|texture| {
             if !texture.uri.is_empty() {
                 let path = path.as_ref().parent().unwrap().join(&texture.uri);
                 let extension = match path.extension() {
@@ -736,7 +737,7 @@ impl Scene {
                     texture.hdr = decoder.read_image_hdr().unwrap();
                 }
             }
-        }
+        });
         scene.init_lights();
         scene
     }
