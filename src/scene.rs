@@ -25,6 +25,8 @@ pub struct Scene {
     pub shapes: Vec<Shape>,
     pub textures: Vec<Texture>,
     pub materials: Vec<Material>,
+    #[serde(skip)]
+    pub lights: Vec<Light>,
 }
 
 impl Scene {
@@ -421,6 +423,88 @@ impl Scene {
             return shape.texcoords[shape.points[element as usize] as usize];
         } else {
             return zero2!();
+        }
+    }
+
+    fn init_lights(&mut self) {
+        for (handle, instance) in self.instances.iter().enumerate() {
+            let material = &self.materials[instance.material];
+            if material.emission == zero3!() {
+                continue;
+            }
+            let shape = &self.shapes[instance.shape];
+            if shape.triangles.is_empty() && shape.quads.is_empty() {
+                continue;
+            }
+
+            if !shape.triangles.is_empty() {
+                let elems_num = shape.triangles.len();
+                let mut elements_cdf = Vec::with_capacity(elems_num);
+                for idx in 0..elems_num {
+                    let triangle = shape.triangles[idx];
+                    elements_cdf[idx] = triangle_area(
+                        &shape.positions[triangle.x as usize],
+                        &shape.positions[triangle.y as usize],
+                        &shape.positions[triangle.z as usize],
+                    );
+                    if idx != 0 {
+                        elements_cdf[idx] += elements_cdf[idx - 1];
+                    }
+                }
+                let light = Light {
+                    instance: handle,
+                    environment: INVALID,
+                    elements_cdf,
+                };
+                self.lights.push(light);
+            } else if !shape.quads.is_empty() {
+                let elems_num = shape.quads.len();
+                let mut elements_cdf = Vec::with_capacity(elems_num);
+                for idx in 0..elems_num {
+                    let quad = shape.quads[idx];
+                    elements_cdf[idx] = quad_area(
+                        &shape.positions[quad.x as usize],
+                        &shape.positions[quad.y as usize],
+                        &shape.positions[quad.z as usize],
+                        &shape.positions[quad.w as usize],
+                    );
+                    if idx != 0 {
+                        elements_cdf[idx] += elements_cdf[idx - 1];
+                    }
+                }
+                let light = Light {
+                    instance: handle,
+                    environment: INVALID,
+                    elements_cdf,
+                };
+                self.lights.push(light);
+            }
+        }
+
+        for (handle, environment) in self.environments.iter().enumerate() {
+            if environment.emission == zero3!() {
+                continue;
+            }
+            if environment.emission_tex != INVALID {
+                let texture = &self.textures[environment.emission_tex];
+                let elems_num = (texture.width * texture.height) as usize;
+                let mut elements_cdf = Vec::with_capacity(elems_num);
+                for idx in 0..elems_num {
+                    let (i, j) = (idx % texture.width as usize, idx / texture.width as usize);
+                    let th = (j as f32 + 0.5) * PI / texture.height as f32;
+                    let value = texture.lookup(i as u32, j as u32, false);
+                    elements_cdf[idx] = value.max() * f32::sin(th);
+                    if idx != 0 {
+                        elements_cdf[idx] += elements_cdf[idx - 1];
+                    }
+                }
+                let light = Light {
+                    instance: INVALID,
+                    environment: handle,
+                    elements_cdf,
+                };
+                self.lights.push(light);
+            }
         }
     }
 

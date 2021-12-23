@@ -315,3 +315,20 @@ impl Shape {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct Light {
+    pub instance: usize,
+    pub environment: usize,
+    pub elements_cdf: Vec<f32>,
+}
+
+impl Default for Light {
+    fn default() -> Self {
+        Light {
+            instance: INVALID,
+            environment: INVALID,
+            elements_cdf: Vec::new(),
+        }
+    }
+}

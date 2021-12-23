@@ -71,13 +71,11 @@ pub fn main() {
         )
         .get_matches();
 
-    let scene_path = matches.value_of("scene").unwrap();
-    let output_path = matches.value_of("output").unwrap();
     println!("Loading scene...");
     let scene_bar = ProgressBar::new(1);
     scene_bar.inc(0);
+    let scene_path = matches.value_of("scene").unwrap();
     let scene = Scene::from_json(scene_path);
-    scene_bar.finish();
     let device = embree::Device::new();
     let bvh = BvhData::from_scene(&device, &scene, false);
     let params = RaytraceParams::from_args(&matches);
@@ -88,6 +86,7 @@ pub fn main() {
             .unwrap();
     }
     let mut state = RaytraceState::from_scene(&scene, &params);
+    scene_bar.finish();
     println!("Rendering...");
     let samples_bar = ProgressBar::new(params.samples as u64);
     samples_bar.set_style(
@@ -120,6 +119,7 @@ pub fn main() {
             */
         }
     }
+    let output_path = matches.value_of("output").unwrap();
     let img: image::RgbImage =
         ImageBuffer::from_raw(state.width as u32, state.height as u32, image_bytes)
             .expect("Image buffer has incorrect size");

@@ -229,6 +229,16 @@ where
 }
 
 #[inline(always)]
+pub fn triangle_area(p0: &Vec3, p1: &Vec3, p2: &Vec3) -> f32 {
+    glm::length(&glm::cross(&(p1 - p0), &(p2 - p0))) / 2.0
+}
+
+#[inline(always)]
+pub fn quad_area(p0: &Vec3, p1: &Vec3, p2: &Vec3, p3: &Vec3) -> f32 {
+    triangle_area(p0, p1, p3) + triangle_area(p2, p3, p1)
+}
+
+#[inline(always)]
 pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
     normalize(&(a - b * dot(a, b)))
 }
