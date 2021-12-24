@@ -823,8 +823,8 @@ pub fn sample_uniform_pdf(size: usize) -> f32 {
 #[inline(always)]
 pub fn sample_discrete(cdf: &VecDeque<f32>, r: f32) -> usize {
     let r = f32::clamp(r * cdf.back().unwrap(), 0.0, cdf.back().unwrap() - 0.00001);
-    let idx = cdf.partition_point(|&n| n < r) as i32 - *cdf.front().unwrap() as i32;
-    usize::clamp(idx as usize, 0, cdf.len() - 1)
+    let idx = cdf.partition_point(|&n| n <= r);
+    usize::clamp(idx, 0, cdf.len() - 1)
 }
 
 pub fn sample_discrete_pdf(cdf: &VecDeque<f32>, idx: usize) -> f32 {
