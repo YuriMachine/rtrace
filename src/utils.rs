@@ -401,3 +401,7 @@ pub fn is_delta(material: &MaterialPoint) -> bool {
         || (material.m_type == MaterialType::Transparent && material.roughness == 0.0)
         || (material.m_type == MaterialType::Volumetric)
 }
+
+pub fn mean3(vec: &Vec3) -> f32 {
+    glm::comp_add(&vec) / 3.0
+}

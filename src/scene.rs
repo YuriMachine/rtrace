@@ -713,14 +713,12 @@ impl Scene {
         let file = File::open(path).unwrap();
         let reader = BufReader::new(file);
         let mut scene: Scene = serde_json::from_reader(reader).expect("unable to parse JSON");
-
         scene.shapes.par_iter_mut().for_each(|shape| {
             if !shape.uri.is_empty() {
                 let mut ply_file =
                     File::open(path.as_ref().parent().unwrap().join(&shape.uri)).unwrap();
                 let parser = ply::parser::Parser::<ply::ply::DefaultElement>::new();
                 let ply = parser.read_ply(&mut ply_file).unwrap();
-
                 if ply.payload.get("vertex").is_some() {
                     for vertex in &ply.payload["vertex"] {
                         ply_get_positions(vertex, &mut shape.positions);
@@ -747,7 +745,6 @@ impl Scene {
                 }
             }
         });
-
         scene.textures.par_iter_mut().for_each(|texture| {
             if !texture.uri.is_empty() {
                 let path = path.as_ref().parent().unwrap().join(&texture.uri);

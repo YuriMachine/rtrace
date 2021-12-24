@@ -2,6 +2,7 @@ use crate::scene_components::MaterialType;
 use crate::{one3, utils::*, vec_comp_div, vec_comp_mul, zero3};
 use glm::{dot, normalize, vec2, vec3};
 use glm::{Vec2, Vec3};
+use nalgebra_glm::{epsilon, is_null};
 use std::collections::VecDeque;
 use std::f32::consts::PI;
 
@@ -54,6 +55,7 @@ impl MaterialPoint {
             MaterialType::Transparent => self.sample_transparent(normal, outgoing, rnl, rn),
             MaterialType::Refractive => self.sample_refractive(normal, outgoing, rnl, rn),
             MaterialType::Subsurface => self.sample_refractive(normal, outgoing, rnl, rn),
+            MaterialType::Gltfpbr => self.sample_gltfpbr(normal, outgoing, rnl, rn),
             _ => zero3!(),
         }
     }
@@ -69,6 +71,7 @@ impl MaterialPoint {
             MaterialType::Transparent => self.eval_transparent(normal, outgoing, incoming),
             MaterialType::Refractive => self.eval_refractive(normal, outgoing, incoming),
             MaterialType::Subsurface => self.eval_refractive(normal, outgoing, incoming),
+            MaterialType::Gltfpbr => self.eval_gltfpbr(normal, outgoing, incoming),
             _ => zero3!(),
         }
     }
@@ -84,6 +87,7 @@ impl MaterialPoint {
             MaterialType::Transparent => self.sample_transparent_pdf(normal, outgoing, incoming),
             MaterialType::Refractive => self.sample_refractive_pdf(normal, outgoing, incoming),
             MaterialType::Subsurface => self.sample_refractive_pdf(normal, outgoing, incoming),
+            MaterialType::Gltfpbr => self.sample_gltfpbr_pdf(normal, outgoing, incoming),
             _ => 0.0,
         }
     }
@@ -556,14 +560,92 @@ impl MaterialPoint {
             1.0 - fresnel_dielectric(rel_ior, &up_normal, outgoing)
         }
     }
+
+    fn sample_gltfpbr(&self, normal: &Vec3, outgoing: &Vec3, rnl: f32, rn: &Vec2) -> Vec3 {
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let reflectivity = glm::lerp(
+            &eta_to_reflectivity(&vec3(self.ior, self.ior, self.ior)),
+            &self.color,
+            self.metallic,
+        );
+        if rnl < mean3(&fresnel_schlick(&reflectivity, &up_normal, outgoing)) {
+            let halfway = sample_microfacet(self.roughness, &up_normal, rn, true);
+            let incoming = glm::reflect_vec(&(-outgoing), &halfway);
+            if !same_hemisphere(&up_normal, outgoing, &incoming) {
+                zero3!()
+            } else {
+                incoming
+            }
+        } else {
+            sample_hemisphere_cos(&up_normal, rn)
+        }
+    }
+
+    fn eval_gltfpbr(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+            return zero3!();
+        }
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let reflectivity = glm::lerp(
+            &eta_to_reflectivity(&vec3(self.ior, self.ior, self.ior)),
+            &self.color,
+            self.metallic,
+        );
+        let f1 = fresnel_schlick(&reflectivity, &up_normal, outgoing);
+        let halfway = normalize(&(incoming + outgoing));
+        let f = fresnel_schlick(&reflectivity, &halfway, incoming);
+        let d = microfacet_distribution(self.roughness, &up_normal, &halfway, true);
+        let g = microfacet_shadowing(self.roughness, &up_normal, &halfway, outgoing, incoming);
+        vec_comp_mul!(self.color * (1.0 - self.metallic), &((one3!() - f1) / PI))
+            * f32::abs(dot(&up_normal, incoming))
+            + f * d * g / (4.0 * dot(&up_normal, outgoing) * dot(&up_normal, incoming))
+                * f32::abs(dot(&up_normal, incoming))
+    }
+
+    fn sample_gltfpbr_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        if dot(normal, incoming) * dot(normal, outgoing) <= 0.0 {
+            return 0.0;
+        }
+        let up_normal = if dot(normal, outgoing) <= 0.0 {
+            -normal
+        } else {
+            *normal
+        };
+        let halfway = normalize(&(outgoing + incoming));
+        let reflectivity = glm::lerp(
+            &eta_to_reflectivity(&vec3(self.ior, self.ior, self.ior)),
+            &self.color,
+            self.metallic,
+        );
+        let f = mean3(&fresnel_schlick(&reflectivity, &up_normal, outgoing));
+        f * sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
+            / (4.0 * f32::abs(dot(outgoing, &halfway)))
+            + (1.0 - f) * sample_hemisphere_cos_pdf(&up_normal, incoming)
+    }
 }
 
+#[inline(always)]
 fn reflectivity_to_eta(reflectivity: &Vec3) -> Vec3 {
     let r_clamp = glm::clamp(reflectivity, 0.0, 0.99);
     return vec_comp_div!(
         one3!() + glm::sqrt(&r_clamp),
         &(one3!() - glm::sqrt(&r_clamp))
     );
+}
+
+#[inline(always)]
+fn eta_to_reflectivity(eta: &Vec3) -> Vec3 {
+    let eta_minus = vec_comp_mul!(eta - one3!(), &(eta - one3!()));
+    let eta_plus = vec_comp_mul!(eta + one3!(), &(eta + one3!()));
+    vec_comp_div!(eta_minus, &eta_plus)
 }
 
 fn sample_hemisphere_cos(normal: &Vec3, rn: &Vec2) -> Vec3 {
@@ -581,6 +663,14 @@ fn sample_hemisphere_cos_pdf(normal: &Vec3, incoming: &Vec3) -> f32 {
     } else {
         cosw / PI
     }
+}
+
+fn fresnel_schlick(specular: &Vec3, normal: &Vec3, outgoing: &Vec3) -> Vec3 {
+    if is_null(specular, epsilon()) {
+        return zero3!();
+    }
+    let cosine = dot(normal, outgoing);
+    specular + (one3!() - specular) * f32::powf(f32::clamp(1.0 - f32::abs(cosine), 0.0, 1.0), 5.0)
 }
 
 fn fresnel_dielectric(eta: f32, normal: &Vec3, outgoing: &Vec3) -> f32 {
@@ -734,7 +824,6 @@ pub fn sample_uniform_pdf(size: usize) -> f32 {
 }
 
 #[inline(always)]
-// try alias method if this does not work
 pub fn sample_discrete(cdf: &VecDeque<f32>, r: f32) -> usize {
     let r = f32::clamp(r * cdf.back().unwrap(), 0.0, cdf.back().unwrap() - 0.00001);
     let idx = cdf.partition_point(|&n| n < r) as i32 - *cdf.front().unwrap() as i32;
