@@ -100,6 +100,7 @@ impl MaterialPoint {
             MaterialType::Reflective => self.sample_reflective_delta(normal, outgoing),
             MaterialType::Transparent => self.sample_transparent_delta(normal, outgoing, rnl),
             MaterialType::Refractive => self.sample_refractive_delta(normal, outgoing, rnl),
+            MaterialType::Volumetric => self.sample_passthrough(outgoing),
             _ => zero3!(),
         }
     }
@@ -112,6 +113,7 @@ impl MaterialPoint {
             MaterialType::Reflective => self.eval_reflective_delta(normal, outgoing, incoming),
             MaterialType::Transparent => self.eval_transparent_delta(normal, outgoing, incoming),
             MaterialType::Refractive => self.eval_refractive_delta(normal, outgoing, incoming),
+            MaterialType::Volumetric => self.eval_passthrough(normal, outgoing, incoming),
             _ => zero3!(),
         }
     }
@@ -130,6 +132,7 @@ impl MaterialPoint {
             MaterialType::Refractive => {
                 self.sample_refractive_pdf_delta(normal, outgoing, incoming)
             }
+            MaterialType::Volumetric => self.sample_passthrough_pdf(normal, outgoing, incoming),
             _ => 0.0,
         }
     }
@@ -629,6 +632,26 @@ impl MaterialPoint {
         f * sample_microfacet_pdf(self.roughness, &up_normal, &halfway)
             / (4.0 * f32::abs(dot(outgoing, &halfway)))
             + (1.0 - f) * sample_hemisphere_cos_pdf(&up_normal, incoming)
+    }
+
+    fn sample_passthrough(&self, outgoing: &Vec3) -> Vec3 {
+        -outgoing
+    }
+
+    fn eval_passthrough(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            zero3!()
+        } else {
+            one3!()
+        }
+    }
+
+    fn sample_passthrough_pdf(&self, normal: &Vec3, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        if dot(normal, incoming) * dot(normal, outgoing) >= 0.0 {
+            0.0
+        } else {
+            1.0
+        }
     }
 }
 
