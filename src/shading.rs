@@ -704,20 +704,20 @@ fn fresnel_conductor(eta: &Vec3, etak: &Vec3, normal: &Vec3, outgoing: &Vec3) ->
         return zero3!();
     }
 
-    cosw = cosw.clamp(-1.0, 1.0);
+    cosw = f32::clamp(cosw, -1.0, 1.0);
     let cos2 = cosw * cosw;
-    let sin2 = (1.0 - cos2).clamp(0.0, 1.0);
+    let sin2 = f32::clamp(1.0 - cos2, 0.0, 1.0);
     let eta2 = vec_comp_mul!(eta, eta);
     let etak2 = vec_comp_mul!(etak, etak);
 
-    let t0 = eta2 - etak2.add_scalar(-sin2);
+    let t0 = eta2 - etak2 - vec3(-sin2, -sin2, -sin2);
     let a2plusb2 = glm::sqrt(&(vec_comp_mul!(t0, &t0) + 4.0 * vec_comp_mul!(eta2, &etak2)));
-    let t1 = a2plusb2.add_scalar(cos2);
+    let t1 = a2plusb2 + vec3(cos2, cos2, cos2);
     let a = glm::sqrt(&((a2plusb2 + t0) / 2.0));
     let t2 = 2.0 * a * cosw;
     let rs = vec_comp_div!(t1 - t2, &(t1 + t2));
 
-    let t3 = cos2 * a2plusb2.add_scalar(sin2) * sin2;
+    let t3 = cos2 * a2plusb2 + vec3(sin2 * sin2, sin2 * sin2, sin2 * sin2);
     let t4 = t2 * sin2;
     let rp = vec_comp_mul!(rs, &vec_comp_div!(t3 - t4, &(t3 + t4)));
     (rp + rs) / 2.0
@@ -752,14 +752,14 @@ fn microfacet_shadowing1(
     let roughness2 = roughness * roughness;
     let cosine2 = cosine * cosine;
     if ggx {
-        return 2.0 * f32::abs(cosine)
-            / (f32::abs(cosine) + f32::sqrt(cosine2 - roughness2 * cosine2 + roughness2));
+        2.0 * f32::abs(cosine)
+            / (f32::abs(cosine) + f32::sqrt(cosine2 - roughness2 * cosine2 + roughness2))
     } else {
         let ci = f32::abs(cosine) / (roughness * f32::sqrt(1.0 - cosine2));
         if ci < 1.6 {
-            return (3.535 * ci + 2.181 * ci * ci) / (1.0 + 2.276 * ci + 2.577 * ci * ci);
+            (3.535 * ci + 2.181 * ci * ci) / (1.0 + 2.276 * ci + 2.577 * ci * ci)
         } else {
-            return 1.0;
+            1.0
         }
     }
 }
@@ -774,13 +774,10 @@ fn microfacet_distribution(roughness: f32, normal: &Vec3, halfway: &Vec3, ggx: b
     let roughness2 = roughness * roughness;
     let cosine2 = cosine * cosine;
     if ggx {
-        return roughness2
-            / (PI
-                * (cosine2 * roughness2 + 1.0 - cosine2)
-                * (cosine2 * roughness2 + 1.0 - cosine2));
+        roughness2
+            / (PI * (cosine2 * roughness2 + 1.0 - cosine2) * (cosine2 * roughness2 + 1.0 - cosine2))
     } else {
-        return f32::exp((cosine2 - 1.0) / (roughness2 * cosine2))
-            / (PI * roughness2 * cosine2 * cosine2);
+        f32::exp((cosine2 - 1.0) / (roughness2 * cosine2)) / (PI * roughness2 * cosine2 * cosine2)
     }
 }
 
