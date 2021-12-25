@@ -1,8 +1,10 @@
 use crate::scene_components::MaterialType;
 use crate::shading::MaterialPoint;
 use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
+use clap::{App, Arg};
 use glm::{dot, inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4};
 use glm::{Mat3, Mat3x4, Vec2, Vec3, Vec4};
+use image::ImageBuffer;
 use parking_lot::Mutex;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -82,15 +84,97 @@ impl RaytraceParams {
             "raytrace" => trace::shade_raytrace,
             _ => trace::shade_raytrace,
         };
+
+        let noparallel = clap::value_t!(args.value_of("noparallel"), bool).unwrap();
+        if noparallel {
+            RaytraceParams::set_noparallel();
+        }
+
         RaytraceParams {
             resolution: clap::value_t!(args.value_of("resolution"), usize).unwrap(),
             samples: clap::value_t!(args.value_of("samples"), i32).unwrap(),
             bounces: clap::value_t!(args.value_of("bounces"), i32).unwrap(),
             clamp: clap::value_t!(args.value_of("clamp"), f32).unwrap(),
-            noparallel: clap::value_t!(args.value_of("noparallel"), bool).unwrap(),
+            noparallel,
             shader,
             ..Default::default()
         }
+    }
+
+    pub fn set_noparallel() {
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build_global()
+            .unwrap();
+    }
+
+    pub fn prompt_args<'a>() -> clap::ArgMatches<'a> {
+        App::new("rtrace")
+            .version("0.1.0")
+            .author("Vincenzo Guarino")
+            .about("Rust porting of Yocto/GL")
+            .arg(
+                Arg::with_name("scene")
+                    .long("--scene")
+                    .takes_value(true)
+                    .required(true)
+                    .help("JSON scene file"),
+            )
+            .arg(
+                Arg::with_name("output")
+                    .short("--out")
+                    .long("--output")
+                    .takes_value(true)
+                    .default_value("out.png")
+                    .help("Output path"),
+            )
+            .arg(
+                Arg::with_name("resolution")
+                    .short("--res")
+                    .long("--resolution")
+                    .takes_value(true)
+                    .default_value("1280")
+                    .help("Image resolution"),
+            )
+            .arg(
+                Arg::with_name("shader")
+                    .long("--shader")
+                    .takes_value(true)
+                    .possible_values(&[
+                        "color", "eyelight", "normal", "position", "naive", "raytrace",
+                    ])
+                    .default_value("raytrace")
+                    .help("shader type"),
+            )
+            .arg(
+                Arg::with_name("samples")
+                    .long("--samples")
+                    .takes_value(true)
+                    .default_value("256")
+                    .help("number of samples"),
+            )
+            .arg(
+                Arg::with_name("bounces")
+                    .long("--bounces")
+                    .takes_value(true)
+                    .default_value("8")
+                    .help("number of bounces"),
+            )
+            .arg(
+                Arg::with_name("clamp")
+                    .long("--clamp")
+                    .takes_value(true)
+                    .default_value("0.0")
+                    .help("clamp value"),
+            )
+            .arg(
+                Arg::with_name("noparallel")
+                    .long("--noparallel")
+                    .takes_value(true)
+                    .default_value("false")
+                    .help("disable threading"),
+            )
+            .get_matches()
     }
 }
 
@@ -148,6 +232,22 @@ impl RaytraceState {
             image,
             rngs,
         }
+    }
+
+    pub fn save_image(&self, output_path: &str) {
+        let mut image_bytes = Vec::with_capacity(self.width * self.height * 3);
+        for pixel in self.image.chunks(self.width) {
+            for rgb in pixel {
+                let scaled = rgb / self.samples as f32;
+                image_bytes.push(to_srgb(scaled.x, 2.2));
+                image_bytes.push(to_srgb(scaled.y, 2.2));
+                image_bytes.push(to_srgb(scaled.z, 2.2));
+            }
+        }
+        let img: image::RgbImage =
+            ImageBuffer::from_raw(self.width as u32, self.height as u32, image_bytes)
+                .expect("Image buffer has incorrect size");
+        img.save(output_path).expect("Failed to save image");
     }
 }
 
