@@ -1,8 +1,7 @@
 use crate::scene_components::MaterialType;
 use crate::{one3, utils::*, vec_comp_div, vec_comp_mul, zero3};
-use glm::{dot, normalize, vec2, vec3};
+use glm::{dot, epsilon, is_null, normalize, vec2, vec3};
 use glm::{Vec2, Vec3};
-use nalgebra_glm::{epsilon, is_null};
 use std::collections::VecDeque;
 use std::f32::consts::PI;
 
@@ -427,8 +426,8 @@ impl MaterialPoint {
                 incoming
             }
         } else {
-            let incoming = glm::refract_vec(&(-outgoing), &halfway, rel_ior);
-            if !same_hemisphere(&up_normal, outgoing, &incoming) {
+            let incoming = glm::refract_vec(&(-outgoing), &halfway, 1.0 / rel_ior);
+            if same_hemisphere(&up_normal, outgoing, &incoming) {
                 zero3!()
             } else {
                 incoming
@@ -652,6 +651,73 @@ impl MaterialPoint {
         } else {
             1.0
         }
+    }
+
+    pub fn sample_transmittance(&self, max_distance: f32, rl: f32, rd: f32) -> f32 {
+        let channel = usize::clamp((rl * 3.0) as usize, 0, 2);
+        let distance = if self.density[channel] == 0.0 {
+            f32::MAX
+        } else {
+            -f32::ln(1.0 - rd) / self.density[channel]
+        };
+        f32::min(distance, max_distance)
+    }
+
+    pub fn eval_transmittance(&self, distance: f32) -> Vec3 {
+        glm::exp(&(-self.density * distance))
+    }
+
+    pub fn sample_transmittance_pdf(&self, distance: f32, max_distance: f32) -> f32 {
+        if distance < max_distance {
+            glm::comp_add(&vec_comp_mul!(
+                self.density,
+                &glm::exp(&(-self.density * distance))
+            )) / 3.0
+        } else {
+            glm::comp_add(&glm::exp(&(-self.density * max_distance))) / 3.0
+        }
+    }
+
+    pub fn sample_scattering(&self, outgoing: &Vec3, rn: &Vec2) -> Vec3 {
+        self.sample_phasefunction(outgoing, rn)
+    }
+
+    pub fn eval_scattering(&self, outgoing: &Vec3, incoming: &Vec3) -> Vec3 {
+        vec_comp_mul!(self.density, &self.scattering) * self.eval_phasefunction(outgoing, incoming)
+    }
+
+    pub fn sample_scattering_pdf(&self, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        self.sample_phasefunction_pdf(outgoing, incoming)
+    }
+
+    fn sample_phasefunction(&self, outgoing: &Vec3, rn: &Vec2) -> Vec3 {
+        let cos_theta = if f32::abs(self.scanisotropy) < 1e-3 {
+            1.0 - 2.0 * rn.y
+        } else {
+            let square = (1.0 - self.scanisotropy * self.scanisotropy)
+                / (1.0 + self.scanisotropy - 2.0 * self.scanisotropy * rn.y);
+            (1.0 + self.scanisotropy * self.scanisotropy - square * square)
+                / (2.0 * self.scanisotropy)
+        };
+
+        let sin_theta = f32::sqrt(f32::max(0.0, 1.0 - cos_theta * cos_theta));
+        let phi = 2.0 * PI * rn.x;
+        let local_incoming = vec3(
+            sin_theta * f32::cos(phi),
+            sin_theta * f32::sin(phi),
+            cos_theta,
+        );
+        return basis_fromz(&(-outgoing)) * local_incoming;
+    }
+
+    fn eval_phasefunction(&self, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        let cosine = -dot(outgoing, incoming);
+        let denom = 1.0 + self.scanisotropy * self.scanisotropy - 2.0 * self.scanisotropy * cosine;
+        (1.0 - self.scanisotropy * self.scanisotropy) / (4.0 * PI * denom * f32::sqrt(denom))
+    }
+
+    fn sample_phasefunction_pdf(&self, outgoing: &Vec3, incoming: &Vec3) -> f32 {
+        self.eval_phasefunction(outgoing, incoming)
     }
 }
 

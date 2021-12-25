@@ -402,6 +402,13 @@ pub fn is_delta(material: &MaterialPoint) -> bool {
         || (material.m_type == MaterialType::Volumetric)
 }
 
+#[inline(always)]
+pub fn is_volumetric(material: &MaterialPoint) -> bool {
+    material.m_type == MaterialType::Refractive
+        || material.m_type == MaterialType::Volumetric
+        || material.m_type == MaterialType::Subsurface
+}
+
 pub fn mean3(vec: &Vec3) -> f32 {
     glm::comp_add(&vec) / 3.0
 }
