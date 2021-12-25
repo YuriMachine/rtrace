@@ -59,7 +59,7 @@ pub fn main() {
             Arg::with_name("clamp")
                 .long("--clamp")
                 .takes_value(true)
-                .default_value("10.0")
+                .default_value("0.0")
                 .help("clamp value"),
         )
         .arg(

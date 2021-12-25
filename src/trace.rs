@@ -71,7 +71,7 @@ pub fn raytrace_samples(
             );
             let mut ray = camera.eval(uv, sample_disk(rand2(rng)));
             let mut radiance = (params.shader)(scene, bvh, &mut ray, rng, params);
-            if radiance.max() > params.clamp {
+            if params.clamp != 0.0 && radiance.max() > params.clamp {
                 radiance = radiance * (params.clamp / radiance.max());
             }
             unsafe {
