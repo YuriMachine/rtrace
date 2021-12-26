@@ -3,11 +3,11 @@ use crate::scene_components::*;
 use crate::shading::*;
 use crate::trace::Ray;
 use crate::utils::*;
-use crate::{one4, vec_comp_mul, zero2, zero3, zero4};
-use glm::{clamp, dot, log, make_mat3x4, mat3x4, normalize, vec2, vec3, vec4};
-use glm::{TVec2, Vec2, Vec3, Vec4};
-use linked_hash_map::LinkedHashMap;
-use ply::ply::Property;
+use crate::*;
+use glm::{
+    clamp, cross, dot, epsilon, is_null, log, make_mat3x4, mat3x4, normalize, vec2, vec3, vec4,
+};
+use glm::{Vec2, Vec3, Vec4};
 use ply_rs as ply;
 use rayon::iter::{IntoParallelRefMutIterator, ParallelIterator};
 use serde::Deserialize;
@@ -29,6 +29,7 @@ pub struct Scene {
     pub shapes: Vec<Shape>,
     pub textures: Vec<Texture>,
     pub materials: Vec<Material>,
+    pub subdivs: Vec<Subdiv>,
     #[serde(skip)]
     pub lights: Vec<Light>,
 }
@@ -279,7 +280,7 @@ impl Scene {
             let mut normalmap = vec3(-1.0, -1.0, -1.0) + 2.0 * texture;
             let (tu, tv) = self.eval_element_tangents(instance, element);
             let frame_x = orthonormalize(&tu, &normal);
-            let frame_y = normalize(&glm::cross(&normal, &frame_x));
+            let frame_y = normalize(&cross(&normal, &frame_x));
             let flip_v = dot(&frame_y, &tv) < 0.0;
             if !flip_v {
                 normalmap.y *= -1.0; // flip vertical axis
@@ -520,7 +521,7 @@ impl Scene {
     fn init_lights(&mut self) {
         for (handle, instance) in self.instances.iter().enumerate() {
             let material = &self.materials[instance.material];
-            if glm::is_null(&material.emission, glm::epsilon()) {
+            if is_null(&material.emission, epsilon()) {
                 continue;
             }
             let shape = &self.shapes[instance.shape];
@@ -572,7 +573,7 @@ impl Scene {
         }
 
         for (handle, environment) in self.environments.iter().enumerate() {
-            if glm::is_null(&environment.emission, glm::epsilon()) {
+            if is_null(&environment.emission, epsilon()) {
                 continue;
             }
             let mut light = Light {
@@ -721,30 +722,31 @@ impl Scene {
                 let ply = parser.read_ply(&mut ply_file).unwrap();
                 if ply.payload.get("vertex").is_some() {
                     for vertex in &ply.payload["vertex"] {
-                        ply_get_positions(vertex, &mut shape.positions);
-                        ply_get_normals(vertex, &mut shape.normals);
-                        ply_get_texcoords(vertex, &mut shape.texcoords);
-                        ply_get_colors(vertex, &mut shape.colors);
-                        ply_get_radius(vertex, &mut shape.radius);
+                        model_io::ply::get_positions(vertex, &mut shape.positions);
+                        model_io::ply::get_normals(vertex, &mut shape.normals);
+                        model_io::ply::get_texcoords(vertex, &mut shape.texcoords);
+                        model_io::ply::get_colors(vertex, &mut shape.colors);
+                        model_io::ply::get_radius(vertex, &mut shape.radius);
                     }
                 }
                 if ply.payload.get("face").is_some() {
                     for face in &ply.payload["face"] {
-                        ply_get_faces(face, shape);
+                        model_io::ply::get_faces(face, shape);
                     }
                 }
                 if ply.payload.get("line").is_some() {
                     for line in &ply.payload["line"] {
-                        ply_get_lines(line, &mut shape.lines);
+                        model_io::ply::get_lines(line, &mut shape.lines);
                     }
                 }
                 if ply.payload.get("point").is_some() {
                     for point in &ply.payload["point"] {
-                        ply_get_points(point, &mut shape.points);
+                        model_io::ply::get_points(point, &mut shape.points);
                     }
                 }
             }
         });
+
         scene.textures.par_iter_mut().for_each(|texture| {
             if !texture.uri.is_empty() {
                 let path = path.as_ref().parent().unwrap().join(&texture.uri);
@@ -1055,143 +1057,4 @@ impl Scene {
             ..Default::default()
         }
     }
-}
-
-fn ply_get_positions(vertex: &LinkedHashMap<String, Property>, positions: &mut Vec<Vec3>) {
-    if vertex.get("x").is_none() || vertex.get("y").is_none() || vertex.get("z").is_none() {
-        return;
-    }
-    let x = match vertex["x"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let y = match vertex["y"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let z = match vertex["z"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    positions.push(vec3(x, y, z));
-}
-
-fn ply_get_normals(vertex: &LinkedHashMap<String, Property>, normals: &mut Vec<Vec3>) {
-    if vertex.get("nx").is_none() || vertex.get("ny").is_none() || vertex.get("nz").is_none() {
-        return;
-    }
-    let nx = match vertex["nx"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let ny = match vertex["ny"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let nz = match vertex["nz"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    normals.push(vec3(nx, ny, nz));
-}
-
-fn ply_get_texcoords(vertex: &LinkedHashMap<String, Property>, texcoords: &mut Vec<Vec2>) {
-    if vertex.get("u").is_none() || vertex.get("v").is_none() {
-        return;
-    }
-    let u = match vertex["u"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let v = match vertex["v"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    // flipping
-    texcoords.push(vec2(u, 1.0 - v));
-}
-
-fn ply_get_radius(vertex: &LinkedHashMap<String, Property>, radii: &mut Vec<f32>) {
-    if vertex.get("radius").is_none() {
-        return;
-    }
-    let radius = match vertex["radius"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    radii.push(radius);
-}
-
-fn ply_get_colors(vertex: &LinkedHashMap<String, Property>, colors: &mut Vec<Vec4>) {
-    if vertex.get("red").is_none() || vertex.get("green").is_none() || vertex.get("blue").is_none()
-    {
-        return;
-    }
-    let red = match vertex["red"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let green = match vertex["green"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    let blue = match vertex["blue"] {
-        Property::Float(c) => c,
-        _ => unreachable!(),
-    };
-    if vertex.get("alpha").is_some() {
-        let alpha = match vertex["alpha"] {
-            Property::Float(c) => c,
-            _ => unreachable!(),
-        };
-        colors.push(vec4(red, green, blue, alpha));
-    } else {
-        colors.push(vec4(red, green, blue, 1.0));
-    }
-}
-
-fn ply_get_faces(face: &LinkedHashMap<String, Property>, shape: &mut Shape) {
-    if face.get("vertex_indices").is_none() {
-        return;
-    }
-    let vertex_indices = match &face["vertex_indices"] {
-        Property::ListInt(c) => c,
-        _ => unreachable!(),
-    };
-    if vertex_indices.len() == 3 {
-        shape.triangles.push(vec3(
-            vertex_indices[0],
-            vertex_indices[1],
-            vertex_indices[2],
-        ));
-    } else if vertex_indices.len() == 4 {
-        shape.quads.push(vec4(
-            vertex_indices[0],
-            vertex_indices[1],
-            vertex_indices[2],
-            vertex_indices[3],
-        ));
-    }
-}
-
-fn ply_get_points(point: &LinkedHashMap<String, Property>, points: &mut Vec<i32>) {
-    if point.get("vertex_indices").is_none() {
-        return;
-    }
-    let vertex_indices = match point["vertex_indices"] {
-        Property::Int(c) => c,
-        _ => unreachable!(),
-    };
-    points.push(vertex_indices);
-}
-
-fn ply_get_lines(line: &LinkedHashMap<String, Property>, lines: &mut Vec<TVec2<i32>>) {
-    if line.get("vertex_indices").is_none() {
-        return;
-    }
-    let vertex_indices = match &line["vertex_indices"] {
-        Property::ListInt(c) => c,
-        _ => unreachable!(),
-    };
-    lines.push(vec2(vertex_indices[0], vertex_indices[1]))
 }

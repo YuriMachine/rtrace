@@ -6,7 +6,7 @@ use rtrace::utils::*;
 
 pub fn main() {
     // load params
-    let args = RaytraceParams::prompt_args();
+    let args = RaytraceParams::get_args();
     let params = RaytraceParams::from_args(&args);
     let scene_path = args.value_of("scene").unwrap();
 
@@ -39,7 +39,7 @@ pub fn main() {
     }
     samples_bar.finish();
 
-    // handle final image
+    // output final image
     let output_path = args.value_of("output").unwrap();
     state.save_image(output_path);
 }

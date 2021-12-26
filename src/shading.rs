@@ -1,6 +1,7 @@
 use crate::scene_components::MaterialType;
-use crate::{one3, utils::*, vec_comp_div, vec_comp_mul, zero3};
-use glm::{dot, epsilon, is_null, normalize, vec2, vec3};
+use crate::utils::*;
+use crate::*;
+use glm::{dot, epsilon, is_null, lerp, normalize, vec2, vec3};
 use glm::{Vec2, Vec3};
 use std::collections::VecDeque;
 use std::f32::consts::PI;
@@ -569,7 +570,7 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        let reflectivity = glm::lerp(
+        let reflectivity = lerp(
             &eta_to_reflectivity(&vec3(self.ior, self.ior, self.ior)),
             &self.color,
             self.metallic,
@@ -596,7 +597,7 @@ impl MaterialPoint {
         } else {
             *normal
         };
-        let reflectivity = glm::lerp(
+        let reflectivity = lerp(
             &eta_to_reflectivity(&vec3(self.ior, self.ior, self.ior)),
             &self.color,
             self.metallic,

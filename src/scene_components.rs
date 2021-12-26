@@ -1,5 +1,6 @@
 use crate::trace::Ray;
-use crate::{one4, utils::*, zero3};
+use crate::utils::*;
+use crate::*;
 use glm::{mat3x4, normalize, triangle_normal, vec2, vec3, vec4};
 use glm::{Mat3x4, TVec2, TVec3, TVec4, Vec2, Vec3, Vec4};
 use serde::Deserialize;
@@ -329,4 +330,31 @@ impl Default for Light {
             elements_cdf: VecDeque::new(),
         }
     }
+}
+
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
+pub struct Subdiv {
+    // face-varying primitives
+    pub quadspos: Vec<TVec4<i32>>,
+    pub quadsnorm: Vec<TVec4<i32>>,
+    pub quadstexcoord: Vec<TVec4<i32>>,
+
+    // vertex data
+    pub positions: Vec<Vec3>,
+    pub normals: Vec<Vec3>,
+    pub texcoords: Vec<Vec2>,
+
+    // subdivision data
+    pub subdivisions: i32,
+    pub catmullclark: bool,
+    pub smooth: bool,
+
+    // displacement data
+    pub displacement: f32,
+    pub displacement_tex: i32,
+
+    // shape reference
+    pub shape: i32,
+    pub uri: String,
 }

@@ -4,10 +4,8 @@ use crate::{bvh::BvhData, scene::*, trace, trace::Ray};
 use clap::{App, Arg};
 use glm::{dot, inverse, make_mat3, make_mat3x4, mat3x3, normalize, transpose, vec2, vec3, vec4};
 use glm::{Mat3, Mat3x4, Vec2, Vec3, Vec4};
-use image::ImageBuffer;
 use parking_lot::Mutex;
-use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::{rngs::SmallRng, Rng, SeedableRng};
 use std::f32::consts::PI;
 
 #[macro_export]
@@ -108,7 +106,7 @@ impl RaytraceParams {
             .unwrap();
     }
 
-    pub fn prompt_args<'a>() -> clap::ArgMatches<'a> {
+    pub fn get_args<'a>() -> clap::ArgMatches<'a> {
         App::new("rtrace")
             .version("0.1.0")
             .author("Vincenzo Guarino")
@@ -164,7 +162,7 @@ impl RaytraceParams {
                 Arg::with_name("clamp")
                     .long("--clamp")
                     .takes_value(true)
-                    .default_value("0.0")
+                    .default_value("10.0")
                     .help("clamp value"),
             )
             .arg(
@@ -245,7 +243,7 @@ impl RaytraceState {
             }
         }
         let img: image::RgbImage =
-            ImageBuffer::from_raw(self.width as u32, self.height as u32, image_bytes)
+            image::ImageBuffer::from_raw(self.width as u32, self.height as u32, image_bytes)
                 .expect("Image buffer has incorrect size");
         img.save(output_path).expect("Failed to save image");
     }
@@ -414,6 +412,11 @@ pub fn orthonormalize(a: &Vec3, b: &Vec3) -> Vec3 {
 }
 
 #[inline(always)]
+pub fn mean3(vec: &Vec3) -> f32 {
+    glm::comp_add(&vec) / 3.0
+}
+
+#[inline(always)]
 pub fn inverse_frame(frame: &Mat3x4, non_rigid: bool) -> Mat3x4 {
     let rotation = make_mat3(
         &[
@@ -468,28 +471,6 @@ pub fn sample_disk(ruv: Vec2) -> Vec2 {
 }
 
 #[inline(always)]
-pub fn to_srgb(component: f32, gamma: f32) -> u8 {
-    (component.max(0.0).min(1.0).powf(1.0 / gamma) * 255.0) as u8
-}
-
-#[inline(always)]
-pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
-    let compute_srgb = |srgb: f32| -> f32 {
-        if srgb <= 0.04045 {
-            srgb / 12.92
-        } else {
-            ((srgb + 0.055) / (1.0 + 0.055)).powf(2.4)
-        }
-    };
-    vec4(
-        compute_srgb(color.x),
-        compute_srgb(color.y),
-        compute_srgb(color.z),
-        compute_srgb(color.w),
-    )
-}
-
-#[inline(always)]
 pub fn is_finite(weight: &Vec3) -> bool {
     f32::is_finite(weight.x) && f32::is_finite(weight.y) && f32::is_finite(weight.z)
 }
@@ -509,6 +490,24 @@ pub fn is_volumetric(material: &MaterialPoint) -> bool {
         || material.m_type == MaterialType::Subsurface
 }
 
-pub fn mean3(vec: &Vec3) -> f32 {
-    glm::comp_add(&vec) / 3.0
+#[inline(always)]
+pub fn to_srgb(component: f32, gamma: f32) -> u8 {
+    (component.max(0.0).min(1.0).powf(1.0 / gamma) * 255.0) as u8
+}
+
+#[inline(always)]
+pub fn srgb_to_rgb(color: Vec4) -> Vec4 {
+    let compute_srgb = |srgb: f32| -> f32 {
+        if srgb <= 0.04045 {
+            srgb / 12.92
+        } else {
+            ((srgb + 0.055) / (1.0 + 0.055)).powf(2.4)
+        }
+    };
+    vec4(
+        compute_srgb(color.x),
+        compute_srgb(color.y),
+        compute_srgb(color.z),
+        compute_srgb(color.w),
+    )
 }
